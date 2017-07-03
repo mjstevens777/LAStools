@@ -101,7 +101,7 @@ PostBuild_Cmds=copy Debug_without_GUI\lasoptimize-cli.exe ..\bin\lasoptimize-cli
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /w /W0 /GX /O2 /I "..\laslib\inc" /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "_MBCS" /YX /FD /c
-# ADD CPP /nologo /w /W0 /GX /O2 /I "..\laszip\src" /I "..\laslib\inc" /I "..\src" /I "..\src_full\glui_api" /I "..\src_full\glut_api" /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "_MBCS" /D "COMPILE_WITH_GUI" /D "COMPILE_WITH_MULTI_CORE" /YX /FD /c
+# ADD CPP /nologo /W3 /GX /O2 /I "..\laszip\src" /I "..\laslib\inc" /I "..\src" /I "..\src_full\glui_api" /I "..\src_full\glut_api" /D "NDEBUG" /D "WIN32" /D "_CONSOLE" /D "_MBCS" /D "COMPILE_WITH_GUI" /D "COMPILE_WITH_MULTI_CORE" /YX /FD /c
 # ADD BASE RSC /l 0x409 /i "../src" /d "NDEBUG"
 # ADD RSC /l 0x409 /i "../src" /d "NDEBUG"
 BSC32=bscmake.exe
@@ -157,34 +157,11 @@ PostBuild_Cmds=copy Debug\lasoptimize.exe ..\bin\lasoptimize.exe
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
 # Begin Source File
 
+SOURCE=..\src_full\dbfreader.cpp
+# End Source File
+# Begin Source File
+
 SOURCE=.\geoprojectionconverter.cpp
-# End Source File
-# Begin Source File
-
-SOURCE=..\src\lasoptimize.cpp
-# End Source File
-# Begin Source File
-
-SOURCE=..\src_full\lasoptimize_gui.cpp
-
-!IF  "$(CFG)" == "lasoptimize - Win32 Release without GUI"
-
-# PROP Exclude_From_Build 1
-
-!ELSEIF  "$(CFG)" == "lasoptimize - Win32 Debug without GUI"
-
-# PROP Exclude_From_Build 1
-
-!ELSEIF  "$(CFG)" == "lasoptimize - Win32 Release"
-
-!ELSEIF  "$(CFG)" == "lasoptimize - Win32 Debug"
-
-!ENDIF 
-
-# End Source File
-# Begin Source File
-
-SOURCE=..\src_full\lasoptimize_multi_core.cpp
 # End Source File
 # Begin Source File
 
@@ -223,6 +200,33 @@ SOURCE=..\src_full\lasoccupancy.cpp
 
 !ENDIF 
 
+# End Source File
+# Begin Source File
+
+SOURCE=..\src\lasoptimize.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=..\src_full\lasoptimize_gui.cpp
+
+!IF  "$(CFG)" == "lasoptimize - Win32 Release without GUI"
+
+# PROP Exclude_From_Build 1
+
+!ELSEIF  "$(CFG)" == "lasoptimize - Win32 Debug without GUI"
+
+# PROP Exclude_From_Build 1
+
+!ELSEIF  "$(CFG)" == "lasoptimize - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "lasoptimize - Win32 Debug"
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=..\src_full\lasoptimize_multi_core.cpp
 # End Source File
 # Begin Source File
 

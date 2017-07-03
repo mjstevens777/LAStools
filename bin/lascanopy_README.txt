@@ -22,7 +22,10 @@
 
   And if you want to override the radius then you can do this by
   adding a fix radius with '-loc_radius 2' or '-loc_radius 7.5'
-  to the command above.
+  to the command above. It is also possible to use text files
+  where each line consists of "name center_x center_y radius" as
+  the list of circular plots. Then add '-names' before '-loc' to
+  handle this correctly.
 
   You can also query a list of rectangular plots from a text
   file with each line listing: "min_x min_y max_x max_y" with a
@@ -30,7 +33,11 @@
 
   lascanopy -i forest\*.laz -lor rectangles.txt -dns -gap -b 50 75 -o stands.csv
 
-  Or load more general polygonal plots from a shapefile with
+  It is also possible to use text files where each line consists
+  of "name min_x min_y max_x max_y" as the list of rectangular
+  plots. Then add '-names' before '-lor' to handle this correctly.
+
+  You can also load more general polygonal plots from a shapefile with
 
   lascanopy -i forest\*.laz -lop polygons.shp -int_p 25 50 75 -centroids -o results.csv
 
@@ -39,8 +46,8 @@
   '-avg', and the standard deviation '-std' of all heights above
   the cutoff that by default is breast height of 1.37. It can be
   changed with the option '-height_cutoff 2.0'. Also the skewness
-  with '-ske', the kurtosis with '-kur', and a quadratic average
-  '-qav' can be computed.
+  with '-ske', the kurtosis with '-kur', and the average square
+  height '-qav' can be computed.
 
   There is also the concept of height "bincentiles" where '-b 90'
   would deliver the percentage or fraction of points between the

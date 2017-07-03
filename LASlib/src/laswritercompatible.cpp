@@ -33,7 +33,7 @@
 #include "bytestreamout_array.hpp"
 #include "bytestreamin_array.hpp"
 
-BOOL LASwriterCompatibleDown::open(LASheader* header, LASwriteOpener* laswriteopener)
+BOOL LASwriterCompatibleDown::open(LASheader* header, LASwriteOpener* laswriteopener, BOOL moveCRSfromEVLRtoVLR, BOOL moveEVLRtoVLR)
 {
   U32 i;
 
@@ -54,6 +54,10 @@ BOOL LASwriterCompatibleDown::open(LASheader* header, LASwriteOpener* laswriteop
     return FALSE;
   }
   else if (header->point_data_format > 10) // only the new point types 6, 7, 8, 9, and 10 are supported
+  {
+    return FALSE;
+  }
+  if (header->extended_number_of_point_records > U32_MAX) // only less than 2^32-1 points are supported
   {
     return FALSE;
   }
@@ -90,8 +94,8 @@ BOOL LASwriterCompatibleDown::open(LASheader* header, LASwriteOpener* laswriteop
   else
     out = new ByteStreamOutArrayBE();
   // write control info
-  U16 lastools_version = (U16)LAS_TOOLS_VERSION;
-  out->put16bitsLE((U8*)&lastools_version);
+  U16 laszip_version = (U16)LASZIP_VERSION_BUILD_DATE;
+  out->put16bitsLE((U8*)&laszip_version);
   U16 compatible_version = 3;
   out->put16bitsLE((U8*)&compatible_version);
   U32 unused = 0;
@@ -128,17 +132,36 @@ BOOL LASwriterCompatibleDown::open(LASheader* header, LASwriteOpener* laswriteop
   out->put32bitsLE((U8*)&number_of_extended_variable_length_records);
   U64 extended_number_of_point_records;
   if (header->number_of_point_records)
+  {
     extended_number_of_point_records = header->number_of_point_records;
+    fprintf(stderr,"WARNING: legacy number_of_point_records in header of LAS 1.4 file should be zero.\n");
+  }
   else
+  {
     extended_number_of_point_records = header->extended_number_of_point_records;
+    header->number_of_point_records = (U32)header->extended_number_of_point_records;
+  }
   out->put64bitsLE((U8*)&extended_number_of_point_records);
   U64 extended_number_of_points_by_return;
   for (i = 0; i < 15; i++)
   {
-    if ((i < 5) && header->number_of_points_by_return[i])
-      extended_number_of_points_by_return = header->number_of_points_by_return[i];
+    if (i < 5)
+    {
+      if (header->number_of_points_by_return[i])
+      {
+        extended_number_of_points_by_return = header->number_of_points_by_return[i];
+        fprintf(stderr,"WARNING: legacy number_of_points_by_return[%d] in header of LAS 1.4 file should be zero.\n", i);
+      }
+      else
+      {
+        extended_number_of_points_by_return = header->extended_number_of_points_by_return[i];
+        header->number_of_points_by_return[i] = (U32)header->extended_number_of_points_by_return[i];
+      }
+    }
     else
+    {
       extended_number_of_points_by_return = header->extended_number_of_points_by_return[i];
+    }
     out->put64bitsLE((U8*)&extended_number_of_points_by_return);
   }
   // add the compatibility VLR
@@ -185,6 +208,72 @@ BOOL LASwriterCompatibleDown::open(LASheader* header, LASwriteOpener* laswriteop
   else // 9->4 and 10->5 
   {
     header->point_data_format -= 5;
+  }
+
+  // look for CRS in EVLRs and move them to VLRs
+
+  if (moveEVLRtoVLR || moveCRSfromEVLRtoVLR)
+  {
+    if (header->evlrs)
+    {
+      for (int i = 0; i < (int)header->number_of_extended_variable_length_records; i++)
+      {
+        if (moveEVLRtoVLR)
+        {
+          if (header->evlrs[i].record_length_after_header <= U16_MAX)
+          {
+            header->add_vlr("LASF_Projection", header->evlrs[i].record_id, (U16)header->evlrs[i].record_length_after_header, header->evlrs[i].data);
+            header->evlrs[i].record_length_after_header = 0;
+            header->evlrs[i].data = 0;
+          }
+          else
+          {
+#ifdef _WIN32
+            fprintf(stderr,"large EVLR with user ID '%s' and record ID %d with payload size %I64d not moved to VLRs.\n", header->evlrs[i].user_id, header->evlrs[i].record_id, header->evlrs[i].record_length_after_header);
+#else
+            fprintf(stderr,"large EVLR with user ID '%s' and record ID %d with payload size %lld not moved to VLRs.\n", header->evlrs[i].user_id, header->evlrs[i].record_id, header->evlrs[i].record_length_after_header);
+#endif
+          }
+        }
+        else if (strcmp(header->evlrs[i].user_id, "LASF_Projection") == 0)
+        {
+          if (header->evlrs[i].record_id == 34735) // GeoKeyDirectoryTag
+          {
+            header->add_vlr("LASF_Projection", header->evlrs[i].record_id, (U16)header->evlrs[i].record_length_after_header, header->evlrs[i].data);
+            header->evlrs[i].record_length_after_header = 0;
+            header->evlrs[i].data = 0;
+          }
+          else if (header->evlrs[i].record_id == 34736) // GeoDoubleParamsTag
+          {
+            header->add_vlr("LASF_Projection", header->evlrs[i].record_id, (U16)header->evlrs[i].record_length_after_header, header->evlrs[i].data);
+            header->evlrs[i].record_length_after_header = 0;
+            header->evlrs[i].data = 0;
+          }
+          else if (header->evlrs[i].record_id == 34737) // GeoAsciiParamsTag
+          {
+            header->add_vlr("LASF_Projection", header->evlrs[i].record_id, (U16)header->evlrs[i].record_length_after_header, header->evlrs[i].data);
+            header->evlrs[i].record_length_after_header = 0;
+            header->evlrs[i].data = 0;
+          }
+          else if (header->evlrs[i].record_id == 2111) // OGC MATH TRANSFORM WKT
+          {
+            header->add_vlr("LASF_Projection", header->evlrs[i].record_id, (U16)header->evlrs[i].record_length_after_header, header->evlrs[i].data);
+            header->evlrs[i].record_length_after_header = 0;
+            header->evlrs[i].data = 0;
+          }
+          else if (header->evlrs[i].record_id == 2112) // OGC COORDINATE SYSTEM WKT
+          {
+            header->add_vlr("LASF_Projection", header->evlrs[i].record_id, (U16)header->evlrs[i].record_length_after_header, header->evlrs[i].data);
+            header->evlrs[i].record_length_after_header = 0;
+            header->evlrs[i].data = 0;
+          }
+          else
+          {
+            fprintf(stderr,"unknown LASF_Projection EVLR with record ID %d not moved to VLRs.\n", header->evlrs[i].record_id);
+          }
+        }
+      }
+    }
   }
 
   writer = laswriteopener->open(header);

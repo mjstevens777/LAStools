@@ -183,6 +183,18 @@ Package=<4>
 
 ###############################################################################
 
+Project: "lascopy"=.\src_full\lascopy.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
 Project: "lasdiff"=.\src\lasdiff.dsp - Package Owner=<4>
 
 Package=<5>
@@ -268,6 +280,18 @@ Package=<4>
 ###############################################################################
 
 Project: "lasinfo"=.\src\lasinfo.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "laslayers"=.\src_full\laslayers.dsp - Package Owner=<4>
 
 Package=<5>
 {{{
@@ -375,6 +399,30 @@ Package=<4>
 
 ###############################################################################
 
+Project: "laspublish"=.\src_full\laspublish.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "lasreturn"=.\src_full\lasreturn.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
 Project: "lassort"=.\src_full\lassort.dsp - Package Owner=<4>
 
 Package=<5>
@@ -448,6 +496,18 @@ Package=<4>
 ###############################################################################
 
 Project: "lasview"=.\src_full\lasview.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "laswires"=.\src_full\laswires.dsp - Package Owner=<4>
 
 Package=<5>
 {{{

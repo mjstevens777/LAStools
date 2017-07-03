@@ -24,7 +24,10 @@
   Change the default scale factor of 10.0 with '-scale_u 20.0'
   or disable the storage in the "user data" field with option
   '-do_not_store_in_user_data' or by storing the height above
-  the ground as "extra bytes" with '-store_as_extra_bytes'.
+  the ground as "extra bytes" with '-store_as_extra_bytes' as
+  an 0.01 scaled signed two-byte short [cm resolution] or with
+  '-store_precise_as_extra_bytes' as an 0.001 scaled signed
+  four-byte integer [mm resolution].
 
   Alternatively - to avoid quantizing and clamping - you can
   '-replace_z' the elevation value of each point with the computed
@@ -61,6 +64,13 @@
   the difference between the ellipsoid and the geoid. Simply run:
 
   lasheight -i lidar.las -ground_points geoid.txt -replace_z -odix _geoid
+
+  When using external ground points with '-ground_points geoid.laz'
+  lasheight will *not* use all points in the file but cut out a
+  "generous portion" surrounding the bounding box of the points
+  whose height is to be computed. That "generous cutting" may fail
+  when the 'geoid.laz' file has sparsely spaced points. Using the
+  '-all_ground_points' option forces lasheight to use all points. 
  
   Please license from martin.isenburg@rapidlasso.com before using
   lasheight commercially.

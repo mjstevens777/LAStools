@@ -605,7 +605,7 @@ BOOL LASreaderMerged::open()
       lasreadertxt->set_scale_scan_angle(scale_scan_angle);
       lasreadertxt->set_scale_factor(scale_factor);
       lasreadertxt->set_offset(offset);
-      if (!lasreadertxt->open(file_names[i], parse_string, skip_lines, populate_header))
+      if (!lasreadertxt->open(file_names[i], 0, parse_string, skip_lines, populate_header))
       {
         fprintf(stderr, "ERROR: could not open lasreadertxt for file '%s'\n", file_names[i]);
         return FALSE;
@@ -657,6 +657,19 @@ BOOL LASreaderMerged::open()
       header = lasreader->header;
       // unlink the pointers for other header so they don't get deallocated twice
       lasreader->header.unlink();
+      // for LAS 1.4 (and 32-bit counter overflows)
+      header.extended_number_of_point_records = (lasreader->header.number_of_point_records ? lasreader->header.number_of_point_records : lasreader->header.extended_number_of_point_records);
+      for (j = 0; j < 5; j++)
+      {
+        header.extended_number_of_points_by_return[j] = (lasreader->header.number_of_points_by_return[j] ? lasreader->header.number_of_points_by_return[j] : lasreader->header.extended_number_of_points_by_return[j]);
+      }
+      if (header.version_minor >= 4)
+      {
+        for (j = 5; j < 15; j++)
+        {
+          header.extended_number_of_points_by_return[j] = lasreader->header.extended_number_of_points_by_return[j];
+        }
+      }
       // count the points up to 64 bits
       npoints = lasreader->npoints;
       // special check for attributes in extra bytes
@@ -698,11 +711,15 @@ BOOL LASreaderMerged::open()
         header.x_offset = lasreader->header.x_offset;
         header.y_offset = lasreader->header.y_offset;
         header.z_offset = lasreader->header.z_offset;
-        // for LAS 1.4
+        // for LAS 1.4 (and 32-bit counter overflows)
+        header.extended_number_of_point_records = (lasreader->header.number_of_point_records ? lasreader->header.number_of_point_records : lasreader->header.extended_number_of_point_records);
+        for (j = 0; j < 5; j++)
+        {
+          header.extended_number_of_points_by_return[j] = (lasreader->header.number_of_points_by_return[j] ? lasreader->header.number_of_points_by_return[j] : lasreader->header.extended_number_of_points_by_return[j]);
+        }
         if (header.version_minor >= 4)
         {
-          header.extended_number_of_point_records = (lasreader->header.extended_number_of_point_records ? lasreader->header.extended_number_of_point_records : lasreader->header.number_of_point_records);
-          for (j = 0; j < 15; j++)
+          for (j = 5; j < 15; j++)
           {
             header.extended_number_of_points_by_return[j] = lasreader->header.extended_number_of_points_by_return[j];
           }
@@ -723,11 +740,15 @@ BOOL LASreaderMerged::open()
         if (header.min_x > lasreader->header.min_x) header.min_x = lasreader->header.min_x;
         if (header.min_y > lasreader->header.min_y) header.min_y = lasreader->header.min_y;
         if (header.min_z > lasreader->header.min_z) header.min_z = lasreader->header.min_z;
-        // for LAS 1.4
+        // for LAS 1.4 (and 32-bit counter overflows)
+        header.extended_number_of_point_records += (lasreader->header.number_of_point_records ? lasreader->header.number_of_point_records : lasreader->header.extended_number_of_point_records);
+        for (j = 0; j < 5; j++)
+        {
+          header.extended_number_of_points_by_return[j] += (lasreader->header.number_of_points_by_return[j] ? lasreader->header.number_of_points_by_return[j] : lasreader->header.extended_number_of_points_by_return[j]);
+        }
         if (header.version_minor >= 4)
         {
-          header.extended_number_of_point_records += (lasreader->header.extended_number_of_point_records ? lasreader->header.extended_number_of_point_records : lasreader->header.number_of_point_records);
-          for (j = 0; j < 15; j++)
+          for (j = 5; j < 15; j++)
           {
             header.extended_number_of_points_by_return[j] += lasreader->header.extended_number_of_points_by_return[j];
           }
@@ -762,6 +783,37 @@ BOOL LASreaderMerged::open()
       }
     }
     lasreader->close();
+  }
+
+  if ((npoints > U32_MAX) && (header.version_minor < 4))
+  {
+    if (0) // (auto_upgrade)
+    {
+#ifdef _WIN32
+      fprintf(stderr,"WARNING: on-the-fly merged LAS 1.%d files contain too many points (%I64d). upgrading to LAS 1.4\n", header.version_minor, npoints);
+#else
+      fprintf(stderr,"WARNING: on-the-fly merged LAS 1.%d files contain too many points (%lld). upgrading to LAS 1.4\n", header.version_minor, npoints);
+#endif
+      if (header.version_minor == 3)
+      {
+        header.header_size += 140;
+        header.offset_to_point_data += 140;
+      }
+      else
+      {
+        header.header_size += 148;
+        header.offset_to_point_data += 148;
+      }
+      header.version_minor = 4;
+    }
+    else
+    {
+#ifdef _WIN32
+      fprintf(stderr,"WARNING: on-the-fly merged LAS 1.%d files contain too many points (%I64d) for single LAS 1.%d file.\n", header.version_minor, npoints, header.version_minor);
+#else
+      fprintf(stderr,"WARNING: on-the-fly merged LAS 1.%d files contain too many points (%lld) for single LAS 1.%d file.\n", header.version_minor, npoints, header.version_minor);
+#endif
+    }
   }
 
   // was it requested to rescale or reoffset
@@ -1358,7 +1410,7 @@ BOOL LASreaderMerged::open_next_file()
     }
     else
     {
-      if (!lasreadertxt->open(file_names[file_name_current], parse_string, skip_lines, populate_header))
+      if (!lasreadertxt->open(file_names[file_name_current], 0, parse_string, skip_lines, populate_header))
       {
         fprintf(stderr, "ERROR: could not open lasreadertxt for file '%s'\n", file_names[file_name_current]);
         return FALSE;

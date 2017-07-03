@@ -13,7 +13,7 @@
 
   COPYRIGHT:
 
-    (c) 2007-2012, martin isenburg, rapidlasso - fast tools to catch reality
+    (c) 2007-2017, martin isenburg, rapidlasso - fast tools to catch reality
 
     This is free software; you can redistribute and/or modify it under the
     terms of the GNU Lesser General Licence as published by the Free Software
@@ -39,17 +39,16 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
-#include <math.h>
 #endif
 
 #include <stdlib.h>
 #include <string.h>
 
-BOOL LASreaderLAS::open(const char* file_name, I32 io_buffer_size, BOOL peek_only)
+BOOL LASreaderLAS::open(const char* file_name, I32 io_buffer_size, BOOL peek_only, U32 decompress_selective)
 {
   if (file_name == 0)
   {
-    fprintf(stderr,"ERROR: fine name pointer is zero\n");
+    fprintf(stderr,"ERROR: file name pointer is zero\n");
     return FALSE;
   }
 
@@ -72,10 +71,10 @@ BOOL LASreaderLAS::open(const char* file_name, I32 io_buffer_size, BOOL peek_onl
   else
     in = new ByteStreamInFileBE(file);
 
-  return open(in, peek_only);
+  return open(in, peek_only, decompress_selective);
 }
 
-BOOL LASreaderLAS::open(FILE* file, BOOL peek_only)
+BOOL LASreaderLAS::open(FILE* file, BOOL peek_only, U32 decompress_selective)
 {
   if (file == 0)
   {
@@ -101,10 +100,10 @@ BOOL LASreaderLAS::open(FILE* file, BOOL peek_only)
   else
     in = new ByteStreamInFileBE(file);
 
-  return open(in);
+  return open(in, peek_only, decompress_selective);
 }
 
-BOOL LASreaderLAS::open(istream& stream, BOOL peek_only)
+BOOL LASreaderLAS::open(istream& stream, BOOL peek_only, U32 decompress_selective)
 {
   // create input
   ByteStreamIn* in;
@@ -113,10 +112,10 @@ BOOL LASreaderLAS::open(istream& stream, BOOL peek_only)
   else
     in = new ByteStreamInIstreamBE(stream);
 
-  return open(in, peek_only);
+  return open(in, peek_only, decompress_selective);
 }
 
-BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
+BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only, U32 decompress_selective)
 {
   U32 i,j;
 
@@ -440,10 +439,12 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
 
       // check variable length record contents
 
+/*
       if (header.vlrs[i].reserved != 0xAABB)
       {
-//        fprintf(stderr,"WARNING: wrong header.vlrs[%d].reserved: %d != 0xAABB\n", i, header.vlrs[i].reserved);
+        fprintf(stderr,"WARNING: wrong header.vlrs[%d].reserved: %d != 0xAABB\n", i, header.vlrs[i].reserved);
       }
+*/
 
       // make sure there are enough bytes left to read the data of the variable length record before the point block starts
 
@@ -722,16 +723,40 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
           {
             if (header.vlr_geo_double_params)
             {
-              fprintf(stderr,"WARNING: variable length records contain more than one GeoF64ParamsTag\n");
+              fprintf(stderr,"WARNING: variable length records contain more than one GeoDoubleParamsTag\n");
             }
             header.vlr_geo_double_params = (F64*)header.vlrs[i].data;
           }
-          else if (header.vlrs[i].record_id != 2112) // GeoAsciiParamsTag
+          else if (header.vlrs[i].record_id == 34737) // GeoAsciiParamsTag
+          {
+            if (header.vlr_geo_ascii_params)
+            {
+              fprintf(stderr,"WARNING: variable length records contain more than one GeoAsciiParamsTag\n");
+            }
+            header.vlr_geo_ascii_params = (CHAR*)header.vlrs[i].data;
+          }
+          else if (header.vlrs[i].record_id == 2111) // WKT OGC MATH TRANSFORM
+          {
+            if (header.vlr_geo_ogc_wkt_math)
+            {
+              fprintf(stderr,"WARNING: variable length records contain more than one WKT OGC MATH TRANSFORM\n");
+            }
+            header.vlr_geo_ogc_wkt_math = (CHAR*)header.vlrs[i].data;
+          }
+          else if (header.vlrs[i].record_id == 2112) // WKT OGC COORDINATE SYSTEM
+          {
+            if (header.vlr_geo_ogc_wkt)
+            {
+              fprintf(stderr,"WARNING: variable length records contain more than one WKT OGC COORDINATE SYSTEM\n");
+            }
+            header.vlr_geo_ogc_wkt = (CHAR*)header.vlrs[i].data;
+          }
+          else
           {
             fprintf(stderr,"WARNING: unknown LASF_Projection VLR with record_id %d.\n", header.vlrs[i].record_id);
           } 
         }
-        else if (header.vlrs[i].record_id != 2112) // GeoAsciiParamsTag
+        else
         {
           fprintf(stderr,"WARNING: no payload for LASF_Projection VLR with record_id %d.\n", header.vlrs[i].record_id);
         }
@@ -890,10 +915,12 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
 
           // check variable length record contents
 
-          if (header.evlrs[i].reserved != 0xAABB)
+/*
+          if (header.evlrs[i].reserved != 0)
           {
-    //        fprintf(stderr,"WARNING: wrong header.evlrs[%d].reserved: %d != 0xAABB\n", i, header.evlrs[i].reserved);
+            fprintf(stderr,"WARNING: wrong header.evlrs[%d].reserved: %d != 0\n", i, header.evlrs[i].reserved);
           }
+*/
 
           // load data following the header of the variable length record
 
@@ -1079,7 +1106,7 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
             {
               if (header.vlr_geo_keys)
               {
-                fprintf(stderr,"WARNING: variable length records contain more than one GeoKeyDirectoryTag\n");
+                fprintf(stderr,"WARNING: extended variable length records contain more than one GeoKeyDirectoryTag\n");
               }
               header.vlr_geo_keys = (LASvlr_geo_keys*)header.evlrs[i].data;
 
@@ -1087,15 +1114,15 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
 
               if (header.vlr_geo_keys->key_directory_version != 1)
               {
-                fprintf(stderr,"WARNING: wrong vlr_geo_keys->key_directory_version: %d != 1\n",header.vlr_geo_keys->key_directory_version);
+                fprintf(stderr,"WARNING: wrong evlr_geo_keys->key_directory_version: %d != 1\n",header.vlr_geo_keys->key_directory_version);
               }
               if (header.vlr_geo_keys->key_revision != 1)
               {
-                fprintf(stderr,"WARNING: wrong vlr_geo_keys->key_revision: %d != 1\n",header.vlr_geo_keys->key_revision);
+                fprintf(stderr,"WARNING: wrong evlr_geo_keys->key_revision: %d != 1\n",header.vlr_geo_keys->key_revision);
               }
               if (header.vlr_geo_keys->minor_revision != 0)
               {
-                fprintf(stderr,"WARNING: wrong vlr_geo_keys->minor_revision: %d != 0\n",header.vlr_geo_keys->minor_revision);
+                fprintf(stderr,"WARNING: wrong evlr_geo_keys->minor_revision: %d != 0\n",header.vlr_geo_keys->minor_revision);
               }
               header.vlr_geo_key_entries = (LASvlr_key_entry*)&header.vlr_geo_keys[1];
             }
@@ -1103,7 +1130,7 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
             {
               if (header.vlr_geo_double_params)
               {
-                fprintf(stderr,"WARNING: variable length records contain more than one GeoF64ParamsTag\n");
+                fprintf(stderr,"WARNING: extended variable length records contain more than one GeoF64ParamsTag\n");
               }
               header.vlr_geo_double_params = (F64*)header.evlrs[i].data;
             }
@@ -1111,9 +1138,29 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
             {
               if (header.vlr_geo_ascii_params)
               {
-                fprintf(stderr,"WARNING: variable length records contain more than one GeoAsciiParamsTag\n");
+                fprintf(stderr,"WARNING: extended variable length records contain more than one GeoAsciiParamsTag\n");
               }
               header.vlr_geo_ascii_params = (CHAR*)header.evlrs[i].data;
+            }
+            else if (header.evlrs[i].record_id == 2111) // WKT OGC MATH TRANSFORM
+            {
+              if (header.vlr_geo_ogc_wkt_math)
+              {
+                fprintf(stderr,"WARNING: extended variable length records contain more than one WKT OGC MATH TRANSFORM\n");
+              }
+              header.vlr_geo_ogc_wkt_math = (CHAR*)header.evlrs[i].data;
+            }
+            else if (header.evlrs[i].record_id == 2112) // WKT OGC COORDINATE SYSTEM
+            {
+              if (header.vlr_geo_ogc_wkt)
+              {
+                fprintf(stderr,"WARNING: extended variable length records contain more than one WKT OGC COORDINATE SYSTEM\n");
+              }
+              header.vlr_geo_ogc_wkt = (CHAR*)header.evlrs[i].data;
+            }
+            else
+            {
+              fprintf(stderr,"WARNING: unknown LASF_Projection EVLR with record_id %d.\n", header.evlrs[i].record_id);
             }
           }
           else if (strcmp(header.evlrs[i].user_id, "LASF_Spec") == 0)
@@ -1122,7 +1169,7 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
             {
               if (header.vlr_classification)
               {
-                fprintf(stderr,"WARNING: variable length records contain more than one ClassificationLookup\n");
+                fprintf(stderr,"WARNING: extended variable length records contain more than one ClassificationLookup\n");
               }
               header.vlr_classification = (LASvlr_classification*)header.evlrs[i].data;
             }
@@ -1169,7 +1216,7 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
 
   if (header.laszip)
   {
-    if (!header.laszip->check())
+    if (!header.laszip->check(header.point_data_record_length))
     {
       fprintf(stderr,"ERROR: %s\n", header.laszip->get_error());
       fprintf(stderr,"       please upgrade to the latest release of LAStools (with LASzip)\n");
@@ -1193,7 +1240,7 @@ BOOL LASreaderLAS::open(ByteStreamIn* stream, BOOL peek_only)
 
   // create the point reader
 
-  reader = new LASreadPoint();
+  reader = new LASreadPoint(decompress_selective);
 
   // initialize point and the reader
 
@@ -1387,11 +1434,12 @@ LASreaderLAS::~LASreaderLAS()
   if (reader || stream) close(TRUE);
 }
 
-LASreaderLASrescale::LASreaderLASrescale(F64 x_scale_factor, F64 y_scale_factor, F64 z_scale_factor) : LASreaderLAS()
+LASreaderLASrescale::LASreaderLASrescale(F64 x_scale_factor, F64 y_scale_factor, F64 z_scale_factor, BOOL check_for_overflow) : LASreaderLAS()
 {
   scale_factor[0] = x_scale_factor;
   scale_factor[1] = y_scale_factor;
   scale_factor[2] = z_scale_factor;
+  this->check_for_overflow = check_for_overflow;
 }
 
 BOOL LASreaderLASrescale::read_point_default()
@@ -1415,9 +1463,10 @@ BOOL LASreaderLASrescale::read_point_default()
   return TRUE;
 }
 
-BOOL LASreaderLASrescale::open(ByteStreamIn* stream, BOOL peek_only)
+BOOL LASreaderLASrescale::open(ByteStreamIn* stream, BOOL peek_only, U32 decompress_selective)
 {
-  if (!LASreaderLAS::open(stream, peek_only)) return FALSE;
+  LASquantizer quantizer = header;
+  if (!LASreaderLAS::open(stream, peek_only, decompress_selective)) return FALSE;
   // do we need to change anything
   rescale_x = rescale_y = rescale_z = FALSE;
   orig_x_scale_factor = header.x_scale_factor;
@@ -1438,6 +1487,69 @@ BOOL LASreaderLASrescale::open(ByteStreamIn* stream, BOOL peek_only)
     header.z_scale_factor = scale_factor[2];
     rescale_z = TRUE;
   }
+
+  // (maybe) make sure rescale does not cause integer overflow for bounding box
+
+  if (check_for_overflow)
+  {
+    F64 temp_f;
+    I64 temp_i;
+
+    if (rescale_x)
+    {
+      // make sure rescale does not cause integer overflow for min_x
+      temp_f = (orig_x_scale_factor*quantizer.get_X(header.min_x))/header.x_scale_factor;
+      temp_i = I64_QUANTIZE(temp_f);
+      if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+      {
+        fprintf(stderr,"WARNING: rescaling from %g to %g causes LAS integer overflow for min_x\n", orig_x_scale_factor, header.x_scale_factor);
+      }
+      // make sure rescale does not cause integer overflow for max_x
+      temp_f = (orig_x_scale_factor*quantizer.get_X(header.max_x))/header.x_scale_factor;
+      temp_i = I64_QUANTIZE(temp_f);
+      if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+      {
+        fprintf(stderr,"WARNING: rescaling from %g to %g causes LAS integer overflow for max_x\n", orig_x_scale_factor, header.x_scale_factor);
+      }
+    }
+
+    if (rescale_y)
+    {
+      // make sure rescale does not cause integer overflow for min_y
+      temp_f = (orig_y_scale_factor*quantizer.get_Y(header.min_y))/header.y_scale_factor;
+      temp_i = I64_QUANTIZE(temp_f);
+      if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+      {
+        fprintf(stderr,"WARNING: rescaling from %g to %g causes LAS integer overflow for min_y\n", orig_y_scale_factor, header.y_scale_factor);
+      }
+      // make sure rescale does not cause integer overflow for max_y
+      temp_f = (orig_y_scale_factor*quantizer.get_Y(header.max_y))/header.y_scale_factor;
+      temp_i = I64_QUANTIZE(temp_f);
+      if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+      {
+        fprintf(stderr,"WARNING: rescaling from %g to %g causes LAS integer overflow for max_y\n", orig_y_scale_factor, header.y_scale_factor);
+      }
+    }
+
+    if (rescale_z)
+    {
+      // make sure rescale does not cause integer overflow for min_z
+      temp_f = (orig_z_scale_factor*quantizer.get_Z(header.min_z))/header.z_scale_factor;
+      temp_i = I64_QUANTIZE(temp_f);
+      if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+      {
+        fprintf(stderr,"WARNING: rescaling from %g to %g causes LAS integer overflow for min_z\n", orig_z_scale_factor, header.z_scale_factor);
+      }
+      // make sure rescale does not cause integer overflow for max_z
+      temp_f = (orig_z_scale_factor*quantizer.get_Z(header.max_z))/header.z_scale_factor;
+      temp_i = I64_QUANTIZE(temp_f);
+      if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+      {
+        fprintf(stderr,"WARNING: rescaling from %g to %g causes LAS integer overflow for max_z\n", orig_z_scale_factor, header.z_scale_factor);
+      }
+    }
+  }
+
   return TRUE;
 }
 
@@ -1475,9 +1587,10 @@ BOOL LASreaderLASreoffset::read_point_default()
   return TRUE;
 }
 
-BOOL LASreaderLASreoffset::open(ByteStreamIn* stream, BOOL peek_only)
+BOOL LASreaderLASreoffset::open(ByteStreamIn* stream, BOOL peek_only, U32 decompress_selective)
 {
-  if (!LASreaderLAS::open(stream, peek_only)) return FALSE;
+  LASquantizer quantizer = header;
+  if (!LASreaderLAS::open(stream, peek_only, decompress_selective)) return FALSE;
   // maybe auto reoffset
   if (auto_reoffset)
   {
@@ -1516,14 +1629,74 @@ BOOL LASreaderLASreoffset::open(ByteStreamIn* stream, BOOL peek_only)
     header.z_offset = offset[2];
     reoffset_z = TRUE;
   }
+
+  // make sure reoffset does not cause integer overflow for bounding box
+
+  F64 temp_f;
+  I64 temp_i;
+
+  if (reoffset_x)
+  {
+    // make sure reoffset_x does not cause integer overflow for min_x
+    temp_f = ((header.x_scale_factor*quantizer.get_X(header.min_x))+orig_x_offset-header.x_offset)/header.x_scale_factor;
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: reoffsetting from %g to %g causes LAS integer overflow for min_x\n", orig_x_offset, header.x_offset);
+    }
+    // make sure reoffset_x does not cause integer overflow for max_x
+    temp_f = ((header.x_scale_factor*quantizer.get_X(header.max_x))+orig_x_offset-header.x_offset)/header.x_scale_factor;
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: reoffsetting from %g to %g causes LAS integer overflow for max_x\n", orig_x_offset, header.x_offset);
+    }
+  }
+
+  if (reoffset_y)
+  {
+    // make sure reoffset_y does not cause integer overflow for min_y
+    temp_f = ((header.y_scale_factor*quantizer.get_Y(header.min_y))+orig_y_offset-header.y_offset)/header.y_scale_factor;
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: reoffsetting from %g to %g causes LAS integer overflow for min_y\n", orig_y_offset, header.y_offset);
+    }
+    // make sure reoffset_y does not cause integer overflow for max_y
+    temp_f = ((header.y_scale_factor*quantizer.get_Y(header.max_y))+orig_y_offset-header.y_offset)/header.y_scale_factor;
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: reoffsetting from %g to %g causes LAS integer overflow for max_y\n", orig_y_offset, header.y_offset);
+    }
+  }
+
+  if (reoffset_z)
+  {
+     // make sure reoffset does not cause integer overflow for min_z
+    temp_f = ((header.z_scale_factor*quantizer.get_Z(header.min_z))+orig_z_offset-header.z_offset)/header.z_scale_factor;
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: reoffsetting from %g to %g causes LAS integer overflow for min_z\n", orig_z_offset, header.z_offset);
+    }
+    // make sure rescale does not cause integer overflow for max_z
+    temp_f = ((header.z_scale_factor*quantizer.get_Z(header.max_z))+orig_z_offset-header.z_offset)/header.z_scale_factor;
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: reoffsetting from %g to %g causes LAS integer overflow for max_z\n", orig_z_offset, header.z_offset);
+    }
+  }
+
   return TRUE;
 }
 
-LASreaderLASrescalereoffset::LASreaderLASrescalereoffset(F64 x_scale_factor, F64 y_scale_factor, F64 z_scale_factor, F64 x_offset, F64 y_offset, F64 z_offset) : LASreaderLASrescale(x_scale_factor, y_scale_factor, z_scale_factor), LASreaderLASreoffset(x_offset, y_offset, z_offset)
+LASreaderLASrescalereoffset::LASreaderLASrescalereoffset(F64 x_scale_factor, F64 y_scale_factor, F64 z_scale_factor, F64 x_offset, F64 y_offset, F64 z_offset) : LASreaderLASrescale(x_scale_factor, y_scale_factor, z_scale_factor, FALSE), LASreaderLASreoffset(x_offset, y_offset, z_offset)
 {
 }
 
-LASreaderLASrescalereoffset::LASreaderLASrescalereoffset(F64 x_scale_factor, F64 y_scale_factor, F64 z_scale_factor) : LASreaderLASrescale(x_scale_factor, y_scale_factor, z_scale_factor), LASreaderLASreoffset()
+LASreaderLASrescalereoffset::LASreaderLASrescalereoffset(F64 x_scale_factor, F64 y_scale_factor, F64 z_scale_factor) : LASreaderLASrescale(x_scale_factor, y_scale_factor, z_scale_factor, FALSE), LASreaderLASreoffset()
 {
 }
 
@@ -1563,9 +1736,10 @@ BOOL LASreaderLASrescalereoffset::read_point_default()
   return TRUE;
 }
 
-BOOL LASreaderLASrescalereoffset::open(ByteStreamIn* stream, BOOL peek_only)
+BOOL LASreaderLASrescalereoffset::open(ByteStreamIn* stream, BOOL peek_only, U32 decompress_selective)
 {
-  if (!LASreaderLASrescale::open(stream)) return FALSE;
+  LASquantizer quantizer = header;
+  if (!LASreaderLASrescale::open(stream, peek_only, decompress_selective)) return FALSE;
   // maybe auto reoffset
   if (auto_reoffset)
   {
@@ -1604,5 +1778,110 @@ BOOL LASreaderLASrescalereoffset::open(ByteStreamIn* stream, BOOL peek_only)
     header.z_offset = offset[2];
     reoffset_z = TRUE;
   }
+
+  // make sure rescale & reoffset do not cause integer overflow for bounding box
+
+  F64 temp_f;
+  I64 temp_i;
+
+  if (reoffset_x || rescale_x)
+  {
+    // make sure rescale & reoffset do not cause integer overflow for min_x
+    if (reoffset_x)
+    {
+      temp_f = ((orig_x_scale_factor*quantizer.get_X(header.min_x))+orig_x_offset-header.x_offset)/header.x_scale_factor;
+    }
+    else
+    {
+      temp_f = (orig_x_scale_factor*quantizer.get_X(header.min_x))/header.x_scale_factor;
+    }
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: rescaling from %g to %g and reoffsetting from %g to %g causes LAS integer overflow for min_x\n", orig_x_scale_factor, header.x_scale_factor, orig_x_offset, header.x_offset);
+    }
+
+    // make sure rescale & reoffset do not cause integer overflow for max_x
+    if (reoffset_x)
+    {
+      temp_f = ((orig_x_scale_factor*quantizer.get_X(header.max_x))+orig_x_offset-header.x_offset)/header.x_scale_factor;
+    }
+    else
+    {
+      temp_f = (orig_x_scale_factor*quantizer.get_X(header.max_x))/header.x_scale_factor;
+    }
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: rescaling from %g to %g and reoffsetting from %g to %g causes LAS integer overflow for max_x\n", orig_x_scale_factor, header.x_scale_factor, orig_x_offset, header.x_offset);
+    }
+  }
+
+  if (reoffset_y || rescale_y)
+  {
+    // make sure rescale & reoffset do not cause integer overflow for min_y
+    if (reoffset_y)
+    {
+      temp_f = ((orig_y_scale_factor*quantizer.get_Y(header.min_y))+orig_y_offset-header.y_offset)/header.y_scale_factor;
+    }
+    else
+    {
+      temp_f = (orig_y_scale_factor*quantizer.get_Y(header.min_y))/header.y_scale_factor;
+    }
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: rescaling from %g to %g and reoffsetting from %g to %g causes LAS integer overflow for min_y\n", orig_y_scale_factor, header.y_scale_factor, orig_y_offset, header.y_offset);
+    }
+
+    // make sure rescale & reoffset do not cause integer overflow for max_y
+    if (reoffset_y)
+    {
+      temp_f = ((orig_y_scale_factor*quantizer.get_Y(header.max_y))+orig_y_offset-header.y_offset)/header.y_scale_factor;
+    }
+    else
+    {
+      temp_f = (orig_y_scale_factor*quantizer.get_Y(header.max_y))/header.y_scale_factor;
+    }
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: rescaling from %g to %g and reoffsetting from %g to %g causes LAS integer overflow for max_y\n", orig_y_scale_factor, header.y_scale_factor, orig_y_offset, header.y_offset);
+    }
+  }
+
+  if (reoffset_z || rescale_z)
+  {
+    // make sure rescale & reoffset do not cause integer overflow for min_z
+    if (reoffset_z)
+    {
+      temp_f = ((orig_z_scale_factor*quantizer.get_Z(header.min_z))+orig_z_offset-header.z_offset)/header.z_scale_factor;
+    }
+    else
+    {
+      temp_f = (orig_z_scale_factor*quantizer.get_Z(header.min_z))/header.z_scale_factor;
+    }
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: rescaling from %g to %g and reoffsetting from %g to %g causes LAS integer overflow for min_z\n", orig_z_scale_factor, header.z_scale_factor, orig_z_offset, header.z_offset);
+    }
+
+    // make sure rescale & reoffset do not cause integer overflow for max_z
+    if (reoffset_z)
+    {
+      temp_f = ((orig_z_scale_factor*quantizer.get_Z(header.max_z))+orig_z_offset-header.z_offset)/header.z_scale_factor;
+    }
+    else
+    {
+      temp_f = (orig_z_scale_factor*quantizer.get_Z(header.max_z))/header.z_scale_factor;
+    }
+    temp_i = I64_QUANTIZE(temp_f);
+    if (I32_FITS_IN_RANGE(temp_i) == FALSE)
+    {
+      fprintf(stderr,"WARNING: rescaling from %g to %g and reoffsetting from %g to %g causes LAS integer overflow for max_z\n", orig_z_scale_factor, header.z_scale_factor, orig_z_offset, header.z_offset);
+    }
+  }
+
   return TRUE;
 }
