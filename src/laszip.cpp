@@ -133,6 +133,8 @@ int main(int argc, char *argv[])
   BOOL lax = FALSE;
   BOOL append = FALSE;
   BOOL remain_compatible = FALSE;
+  BOOL move_CRS = FALSE;
+  BOOL move_all = FALSE;
   F32 tile_size = 100.0f;
   U32 threshold = 1000;
   U32 minimum_points = 100000;
@@ -230,6 +232,14 @@ int main(int argc, char *argv[])
     else if (strcmp(argv[i],"-remain_compatible") == 0)
     {
       remain_compatible = TRUE;
+    }
+    else if (strcmp(argv[i],"-move_CRS") == 0)
+    {
+      move_CRS = TRUE;
+    }
+    else if (strcmp(argv[i],"-move_all") == 0)
+    {
+      move_all = TRUE;
     }
     else if (strcmp(argv[i],"-eop") == 0)
     {
@@ -534,10 +544,10 @@ int main(int argc, char *argv[])
 
       LASwriter* laswriter = 0;
       
-      if (lasreader->header.point_data_format > 5)
+      if ((lasreader->header.point_data_format > 5) && !laswriteopener.get_native() && (laswriteopener.get_format() == LAS_TOOLS_FORMAT_LAZ))
       {
         LASwriterCompatibleDown* laswritercompatibledown = new LASwriterCompatibleDown();
-        if (laswritercompatibledown->open(&lasreader->header, &laswriteopener))
+        if (laswritercompatibledown->open(&lasreader->header, &laswriteopener, move_CRS, move_all))
         {
           laswriter = laswritercompatibledown;
         }

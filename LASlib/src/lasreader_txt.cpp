@@ -13,7 +13,7 @@
 
   COPYRIGHT:
 
-    (c) 2007-2012, martin isenburg, rapidlasso - fast tools to catch reality
+    (c) 2007-2017, martin isenburg, rapidlasso - fast tools to catch reality
 
     This is free software; you can redistribute and/or modify it under the
     terms of the GNU Lesser General Licence as published by the Free Software
@@ -39,7 +39,7 @@
 
 extern "C" FILE* fopen_compressed(const char* filename, const char* mode, bool* piped);
 
-BOOL LASreaderTXT::open(const char* file_name, const char* parse_string, I32 skip_lines, BOOL populate_header)
+BOOL LASreaderTXT::open(const CHAR* file_name, U8 point_type, const CHAR* parse_string, I32 skip_lines, BOOL populate_header)
 {
   if (file_name == 0)
   {
@@ -59,10 +59,10 @@ BOOL LASreaderTXT::open(const char* file_name, const char* parse_string, I32 ski
     fprintf(stderr, "WARNING: setvbuf() failed with buffer size %d\n", 10*LAS_TOOLS_IO_IBUFFER_SIZE);
   }
 
-  return open(file, file_name, parse_string, skip_lines, populate_header);
+  return open(file, file_name, point_type, parse_string, skip_lines, populate_header);
 }
 
-BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_string, I32 skip_lines, BOOL populate_header)
+BOOL LASreaderTXT::open(FILE* file, const CHAR* file_name, U8 point_type, const CHAR* parse_string, I32 skip_lines, BOOL populate_header)
 {
   int i;
 
@@ -104,6 +104,11 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
           for (I32 d = 0; d < dim; d++)
             attribute.set_offset(attribute_offsets[i], d);
         }
+        if (attribute_no_datas[i] != F64_MAX)
+        {
+          for (I32 d = 0; d < dim; d++)
+            attribute.set_no_data(attribute_no_datas[i], d);
+        }
         header.add_attribute(attribute);
       }
       catch(...) {
@@ -140,16 +145,62 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
   }
   else
   {
-    header.file_creation_day = 333;
-    header.file_creation_year = 2014;
+    header.file_creation_day = 1;
+    header.file_creation_year = 2016;
   }
 #else
-  header.file_creation_day = 333;
-  header.file_creation_year = 2014;
+  header.file_creation_day = 1;
+  header.file_creation_year = 2017;
 #endif
-  if (parse_string)
+  if (point_type)
   {
-    if (strstr(parse_string,"t"))
+    switch (point_type) 
+    {
+    case 1:
+      header.point_data_record_length = 28;
+      break;
+    case 2:
+      header.point_data_record_length = 26;
+      break;
+    case 3:
+      header.point_data_record_length = 34;
+      break;
+    case 6:
+      header.point_data_record_length = 30;
+      break;
+    case 7:
+      header.point_data_record_length = 36;
+      break;
+    case 8:
+      header.point_data_record_length = 38;
+      break;
+    default:
+      return FALSE;
+    }
+    header.point_data_format = point_type;
+  }
+  else if (parse_string)
+  {
+    if (strstr(parse_string,"o") || strstr(parse_string,"l") || strstr(parse_string,"I"))
+    {
+      // new point types
+      if (strstr(parse_string,"I"))
+      {
+        header.point_data_format = 8;
+        header.point_data_record_length = 38;
+      }
+      else if (strstr(parse_string,"R") || strstr(parse_string,"G") || strstr(parse_string,"B") || strstr(parse_string,"H"))
+      {
+        header.point_data_format = 7;
+        header.point_data_record_length = 36;
+      }
+      else
+      {
+        header.point_data_format = 6;
+        header.point_data_record_length = 30;
+      }
+    }
+    else if (strstr(parse_string,"t"))
     {
       if (strstr(parse_string,"R") || strstr(parse_string,"G") || strstr(parse_string,"B") || strstr(parse_string,"H"))
       {
@@ -181,6 +232,15 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
     header.point_data_format = 0;
     header.point_data_record_length = 20;
   }
+
+  if (header.point_data_format > 5)
+  {
+    header.version_minor = 4;
+    header.header_size = 375;
+    header.offset_to_point_data = 375;
+  }
+
+  this->point_type = header.point_data_format;
 
   // maybe attributes in extra bytes
 
@@ -267,7 +327,14 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
 
     // create return histogram
 
-    if (point.return_number >= 1 && point.return_number <= 5) header.number_of_points_by_return[point.return_number-1]++;
+    if (point.extended_point_type)
+    {
+      if (point.extended_return_number >= 1 && point.extended_return_number <= 15) header.extended_number_of_points_by_return[point.extended_return_number-1]++;
+    }
+    else
+    {
+      if (point.return_number >= 1 && point.return_number <= 5) header.number_of_points_by_return[point.return_number-1]++;
+    }
 
     // init the min and max of attributes in extra bytes
 
@@ -289,7 +356,14 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
         // count points
         npoints++;
         // create return histogram
-        if (point.return_number >= 1 && point.return_number <= 5) header.number_of_points_by_return[point.return_number-1]++;
+        if (point.extended_point_type)
+        {
+          if (point.extended_return_number >= 1 && point.extended_return_number <= 15) header.extended_number_of_points_by_return[point.extended_return_number-1]++;
+        }
+        else
+        {
+          if (point.return_number >= 1 && point.return_number <= 5) header.number_of_points_by_return[point.return_number-1]++;
+        }
         // update bounding box
         if (point.coordinates[0] < header.min_x) header.min_x = point.coordinates[0];
         else if (point.coordinates[0] > header.max_x) header.max_x = point.coordinates[0];
@@ -313,7 +387,7 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
         fprintf(stderr, "WARNING: cannot parse '%s' with '%s'. skipping ...\n", line, parse_less);
       }
     }
-    if (npoints > U32_MAX)
+    if (point.extended_point_type || (npoints > U32_MAX))
     {
       header.version_minor = 4;
       header.number_of_point_records = 0;
@@ -624,8 +698,8 @@ BOOL LASreaderTXT::open(FILE* file, const char* file_name, const char* parse_str
   if (i != 1)
   {
     fprintf(stderr, "ERROR: could not parse any lines with '%s'\n", this->parse_string);
-    fclose(file);
-    file = 0;
+    fclose(this->file);
+    this->file = 0;
     free(this->parse_string);
     this->parse_string = 0;
     return FALSE;
@@ -726,7 +800,7 @@ void LASreaderTXT::set_offset(const F64* offset)
   }
 }
 
-void LASreaderTXT::add_attribute(I32 data_type, const char* name, const char* description, F64 scale, F64 offset)
+void LASreaderTXT::add_attribute(I32 data_type, const char* name, const char* description, F64 scale, F64 offset, F64 pre_scale, F64 pre_offset, F64 no_data)
 {
   attributes_data_types[number_attributes] = data_type;
   if (name)
@@ -749,6 +823,9 @@ void LASreaderTXT::add_attribute(I32 data_type, const char* name, const char* de
   }
   attribute_scales[number_attributes] = scale;
   attribute_offsets[number_attributes] = offset;
+  attribute_pre_scales[number_attributes] = pre_scale;
+  attribute_pre_offsets[number_attributes] = pre_offset;
+  attribute_no_datas[number_attributes] = no_data;
   number_attributes++;
 }
 
@@ -863,7 +940,14 @@ BOOL LASreaderTXT::read_point_default()
   {
     // update number of point records
     // create return histogram
-    if (point.return_number >= 1 && point.return_number <= 5) header.number_of_points_by_return[point.return_number-1]++;
+    if (point.extended_point_type)
+    {
+      if (point.extended_return_number >= 1 && point.extended_return_number <= 15) header.extended_number_of_points_by_return[point.extended_return_number-1]++;
+    }
+    else
+    {
+      if (point.return_number >= 1 && point.return_number <= 5) header.number_of_points_by_return[point.return_number-1]++;
+    }
     // update bounding box
     if (point.coordinates[0] < header.min_x) header.min_x = point.coordinates[0];
     else if (point.coordinates[0] > header.max_x) header.max_x = point.coordinates[0];
@@ -905,7 +989,7 @@ BOOL LASreaderTXT::reopen(const char* file_name)
 
   if (file_name == 0)
   {
-    fprintf(stderr,"ERROR: fine name pointer is zero\n");
+    fprintf(stderr,"ERROR: file name pointer is zero\n");
     return FALSE;
   }
 
@@ -978,6 +1062,7 @@ LASreaderTXT::LASreaderTXT()
 {
   file = 0;
   piped = false;
+  point_type = 0;
   parse_string = 0;
   scale_factor = 0;
   offset = 0;
@@ -1012,11 +1097,19 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   {
     return FALSE;
   }
+  F64 temp_d;
+  if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
+  if (attribute_pre_scales[index] != 1.0)
+  {
+    temp_d *= attribute_pre_scales[index];
+  }
+  if (attribute_pre_offsets[index] != 0.0)
+  {
+    temp_d -= attribute_pre_offsets[index];
+  }
   if (header.attributes[index].data_type == 1)
   {
     I32 temp_i;
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     if (header.attributes[index].has_offset())
     {
       temp_d -= header.attributes[index].offset[0];
@@ -1042,8 +1135,6 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   else if (header.attributes[index].data_type == 2)
   {
     I32 temp_i;
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     if (header.attributes[index].has_offset())
     {
       temp_d -= header.attributes[index].offset[0];
@@ -1069,8 +1160,6 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   else if (header.attributes[index].data_type == 3)
   {
     I32 temp_i;
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     if (header.attributes[index].has_offset())
     {
       temp_d -= header.attributes[index].offset[0];
@@ -1096,8 +1185,6 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   else if (header.attributes[index].data_type == 4)
   {
     I32 temp_i;
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     if (header.attributes[index].has_offset())
     {
       temp_d -= header.attributes[index].offset[0];
@@ -1123,8 +1210,6 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   else if (header.attributes[index].data_type == 5)
   {
     U32 temp_u;
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     if (header.attributes[index].has_offset())
     {
       temp_d -= header.attributes[index].offset[0];
@@ -1142,8 +1227,6 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   else if (header.attributes[index].data_type == 6)
   {
     I32 temp_i;
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     if (header.attributes[index].has_offset())
     {
       temp_d -= header.attributes[index].offset[0];
@@ -1160,14 +1243,11 @@ BOOL LASreaderTXT::parse_attribute(const char* l, I32 index)
   }
   else if (header.attributes[index].data_type == 9)
   {
-    F32 temp_f;
-    if (sscanf(l, "%f", &temp_f) != 1) return FALSE;
+    F32 temp_f = (F32)temp_d;
     point.set_attribute(attribute_starts[index], temp_f);
   }
   else if (header.attributes[index].data_type == 10)
   {
-    F64 temp_d;
-    if (sscanf(l, "%lf", &temp_d) != 1) return FALSE;
     point.set_attribute(attribute_starts[index], temp_d);
   }
   else
@@ -1189,105 +1269,166 @@ BOOL LASreaderTXT::parse(const char* parse_string)
   {
     if (p[0] == 'x') // we expect the x coordinate
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%lf", &(point.coordinates[0])) != 1) return FALSE;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'y') // we expect the y coordinate
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%lf", &(point.coordinates[1])) != 1) return FALSE;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'z') // we expect the x coordinate
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%lf", &(point.coordinates[2])) != 1) return FALSE;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 't') // we expect the gps time
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%lf", &(point.gps_time)) != 1) return FALSE;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'R') // we expect the red channel of the RGB field
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       point.rgb[0] = (short)temp_i;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'G') // we expect the green channel of the RGB field
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       point.rgb[1] = (short)temp_i;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'B') // we expect the blue channel of the RGB field
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       point.rgb[2] = (short)temp_i;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 's') // we expect a string or a number that we don't care about
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'i') // we expect the intensity
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%f", &temp_f) != 1) return FALSE;
       if (translate_intensity != 0.0f) temp_f = temp_f+translate_intensity;
       if (scale_intensity != 1.0f) temp_f = temp_f*scale_intensity;
       if (temp_f < 0.0f || temp_f >= 65535.5f) fprintf(stderr, "WARNING: intensity %g is out of range of unsigned short\n", temp_f);
       point.intensity = (unsigned short)(temp_f+0.5f);
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'a') // we expect the scan angle
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%f", &temp_f) != 1) return FALSE;
       if (translate_scan_angle != 0.0f) temp_f = temp_f+translate_scan_angle;
       if (scale_scan_angle != 1.0f) temp_f = temp_f*scale_scan_angle;
       if (temp_f < -128.0f || temp_f > 127.0f) fprintf(stderr, "WARNING: scan angle %g is out of range of char\n", temp_f);
       point.scan_angle_rank = (char)temp_f;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'n') // we expect the number of returns of given pulse
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
-      if (temp_i < 0 || temp_i > 7) fprintf(stderr, "WARNING: return number %d is out of range of three bits\n", temp_i);
-      point.number_of_returns = temp_i & 7;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      if (point_type > 5)
+      {
+        if (temp_i < 0 || temp_i > 15) fprintf(stderr, "WARNING: number of returns of given pulse %d is out of range of four bits\n", temp_i);
+        point.set_extended_number_of_returns(temp_i & 15);
+      }
+      else
+      {
+        if (temp_i < 0 || temp_i > 7) fprintf(stderr, "WARNING: number of returns of given pulse %d is out of range of three bits\n", temp_i);
+        point.set_number_of_returns(temp_i & 7);
+      }
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'r') // we expect the number of the return
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
-      if (temp_i < 0 || temp_i > 7) fprintf(stderr, "WARNING: return number %d is out of range of three bits\n", temp_i);
-      point.return_number = temp_i & 7;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      if (point_type > 5)
+      {
+        if (temp_i < 0 || temp_i > 15) fprintf(stderr, "WARNING: return number %d is out of range of four bits\n", temp_i);
+        point.set_extended_return_number(temp_i & 15);
+      }
+      else
+      {
+        if (temp_i < 0 || temp_i > 7) fprintf(stderr, "WARNING: return number %d is out of range of three bits\n", temp_i);
+        point.set_return_number(temp_i & 7);
+      }
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
+    }
+    else if (p[0] == 'h') // we expect the with<h>eld flag
+    {
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
+      if (l[0] == 0) return FALSE;
+      if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
+      if (temp_i < 0 || temp_i > 1) fprintf(stderr, "WARNING: withheld flag %d is out of range of single bit\n", temp_i);
+      point.set_withheld_flag(temp_i ? 1 : 0);
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
+    }
+    else if (p[0] == 'k') // we expect the <k>eypoint flag
+    {
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
+      if (l[0] == 0) return FALSE;
+      if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
+      if (temp_i < 0 || temp_i > 1) fprintf(stderr, "WARNING: keypoint flag %d is out of range of single bit\n", temp_i);
+      point.set_keypoint_flag(temp_i ? 1 : 0);
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
+    }
+    else if (p[0] == 'g') // we expect the synthetic fla<g>
+    {
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
+      if (l[0] == 0) return FALSE;
+      if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
+      if (temp_i < 0 || temp_i > 1) fprintf(stderr, "WARNING: keypoint flag %d is out of range of single bit\n", temp_i);
+      point.set_synthetic_flag(temp_i ? 1 : 0);
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
+    }
+    else if (p[0] == 'o') // we expect the <o>verlap flag
+    {
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
+      if (l[0] == 0) return FALSE;
+      if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
+      if (temp_i < 0 || temp_i > 1) fprintf(stderr, "WARNING: overlap flag %d is out of range of single bit\n", temp_i);
+      point.set_extended_overlap_flag(temp_i ? 1 : 0);
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
+    }
+    else if (p[0] == 'l') // we expect the scanner channe<l>
+    {
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
+      if (l[0] == 0) return FALSE;
+      if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
+      if (temp_i < 0 || temp_i > 3) fprintf(stderr, "WARNING: scanner channel %d is out of range of two bits\n", temp_i);
+      point.extended_scanner_channel = temp_i & 3;
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'E') // we expect a terrasolid echo encoding)
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       if (temp_i < 0 || temp_i > 3) fprintf(stderr, "WARNING: terrasolid echo encoding %d is out of range of 0 to 3\n", temp_i);
@@ -1311,66 +1452,66 @@ BOOL LASreaderTXT::parse(const char* parse_string)
         point.number_of_returns = 3;
         point.return_number = 2;
       }
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'c') // we expect the classification
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       if (temp_i < 0 || temp_i > 255) fprintf(stderr, "WARNING: classification %d is out of range of unsigned char\n", temp_i);
       point.classification = (unsigned char)temp_i;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'u') // we expect the user data
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       if (temp_i < 0 || temp_i > 255) fprintf(stderr, "WARNING: user data %d is out of range of unsigned char\n", temp_i);
       point.user_data = temp_i & 255;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'p') // we expect the point source ID
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       if (temp_i < 0 || temp_i > 65535) fprintf(stderr, "WARNING: point source ID %d is out of range of unsigned short\n", temp_i);
       point.point_source_ID = temp_i & 65535;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'e') // we expect the edge of flight line flag
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       if (temp_i < 0 || temp_i > 1) fprintf(stderr, "WARNING: edge of flight line flag %d is out of range of boolean flag\n", temp_i);
       point.edge_of_flight_line = (temp_i ? 1 : 0);
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'd') // we expect the direction of scan flag
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       if (sscanf(l, "%d", &temp_i) != 1) return FALSE;
       if (temp_i < 0 || temp_i > 1) fprintf(stderr, "WARNING: direction of scan flag %d is out of range of boolean flag\n", temp_i);
       point.scan_direction_flag = (temp_i ? 1 : 0);
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] >= '0' && p[0] <= '9') // we expect attribute number 0 to 9
     {
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t')) l++; // first skip white spaces
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';')) l++; // first skip white spaces
       if (l[0] == 0) return FALSE;
       I32 index = (I32)(p[0] - '0');
       if (!parse_attribute(l, index)) return FALSE;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'H') // we expect a hexadecimal coded RGB color
     {
       I32 hex_value;
       char hex_string[3] = "__";
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == '\"')) l++; // first skip white spaces and quotes
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';' || l[0] == '\"')) l++; // first skip white spaces and quotes
       if (l[0] == 0) return FALSE;
       hex_string[0] = l[0]; hex_string[1] = l[1];
       sscanf(hex_string,"%x",&hex_value);
@@ -1382,17 +1523,17 @@ BOOL LASreaderTXT::parse(const char* parse_string)
       sscanf(hex_string,"%x",&hex_value);
       point.rgb[2] = hex_value;
       l+=6;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else if (p[0] == 'I') // we expect a hexadecimal coded intensity
     {
       I32 hex_value;
-      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == '\"')) l++; // first skip white spaces and quotes
+      while (l[0] && (l[0] == ' ' || l[0] == ',' || l[0] == '\t' || l[0] == ';' || l[0] == '\"')) l++; // first skip white spaces and quotes
       if (l[0] == 0) return FALSE;
       sscanf(l,"%x",&hex_value);
       point.intensity = U8_CLAMP(((F64)hex_value/(F64)0xFFFFFF)*255);
       l+=6;
-      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t') l++; // then advance to next white space
+      while (l[0] && l[0] != ' ' && l[0] != ',' && l[0] != '\t' && l[0] != ';') l++; // then advance to next white space
     }
     else
     {
@@ -1420,7 +1561,12 @@ BOOL LASreaderTXT::check_parse_string(const char* parse_string)
         (p[0] != 'a') && // we expect the scan angle
         (p[0] != 'n') && // we expect the number of returns of given pulse
         (p[0] != 'r') && // we expect the number of the return
-        (p[0] != 'E') && // we expect a terrasolid echo encoding
+        (p[0] != 'h') && // we expect the with<h>eld flag
+        (p[0] != 'k') && // we expect the <k>eypoint flag
+        (p[0] != 'g') && // we expect the synthetic fla<g>
+        (p[0] != 'o') && // we expect the <o>verlap flag
+        (p[0] != 'l') && // we expect the scanner channe<l>
+        (p[0] != 'E') && // we expect terrasolid echo encoding
         (p[0] != 'c') && // we expect the classification
         (p[0] != 'u') && // we expect the user data
         (p[0] != 'p') && // we expect the point source ID
@@ -1442,24 +1588,29 @@ BOOL LASreaderTXT::check_parse_string(const char* parse_string)
       else
       {
         fprintf(stderr, "ERROR: unknown symbol '%c' in parse string. valid are\n", p[0]);
-        fprintf(stderr, "       'x' : the x coordinate\n");
-        fprintf(stderr, "       'y' : the y coordinate\n");
-        fprintf(stderr, "       'z' : the z coordinate\n");
-        fprintf(stderr, "       't' : the gps time\n");
-        fprintf(stderr, "       'R' : the red channel of the RGB field\n");
-        fprintf(stderr, "       'G' : the green channel of the RGB field\n");
-        fprintf(stderr, "       'B' : the blue channel of the RGB field\n");
-        fprintf(stderr, "       's' : a string or a number that we don't care about\n");
-        fprintf(stderr, "       'i' : the intensity\n");
-        fprintf(stderr, "       'a' : the scan angle\n");
-        fprintf(stderr, "       'n' : the number of returns of that given pulse\n");
-        fprintf(stderr, "       'r' : the number of the return\n");
-        fprintf(stderr, "       'E' : a terrasolid echo encoding\n");
-        fprintf(stderr, "       'c' : the classification\n");
-        fprintf(stderr, "       'u' : the user data\n");
-        fprintf(stderr, "       'p' : the point source ID\n");
-        fprintf(stderr, "       'e' : the edge of flight line flag\n");
-        fprintf(stderr, "       'd' : the direction of scan flag\n");
+        fprintf(stderr, "       'x' : the <x> coordinate\n");
+        fprintf(stderr, "       'y' : the <y> coordinate\n");
+        fprintf(stderr, "       'z' : the <z> coordinate\n");
+        fprintf(stderr, "       't' : the gps <t>ime\n");
+        fprintf(stderr, "       'R' : the <R>ed channel of the RGB field\n");
+        fprintf(stderr, "       'G' : the <G>reen channel of the RGB field\n");
+        fprintf(stderr, "       'B' : the <B>lue channel of the RGB field\n");
+        fprintf(stderr, "       's' : <s>kip a string or a number that we don't care about\n");
+        fprintf(stderr, "       'i' : the <i>ntensity\n");
+        fprintf(stderr, "       'a' : the scan <a>ngle\n");
+        fprintf(stderr, "       'n' : the <n>umber of returns of that given pulse\n");
+        fprintf(stderr, "       'r' : the number of the <r>eturn\n");
+        fprintf(stderr, "       'h' : the with<h>eld flag\n");
+        fprintf(stderr, "       'k' : the <k>eypoint flag\n");
+        fprintf(stderr, "       'g' : the synthetic fla<g>\n");
+        fprintf(stderr, "       'o' : the <o>verlap flag\n");
+        fprintf(stderr, "       'l' : the scanner channe<l>\n");
+        fprintf(stderr, "       'E' : terrasolid <E>hco Encoding\n");
+        fprintf(stderr, "       'c' : the <c>lassification\n");
+        fprintf(stderr, "       'u' : the <u>ser data\n");
+        fprintf(stderr, "       'p' : the <p>oint source ID\n");
+        fprintf(stderr, "       'e' : the <e>dge of flight line flag\n");
+        fprintf(stderr, "       'd' : the <d>irection of scan flag\n");
         fprintf(stderr, "   '0'-'9' : additional point attributes described as extra bytes\n");
         fprintf(stderr, "       'H' : a hexadecimal string encoding the RGB color\n");
         fprintf(stderr, "       'I' : a hexadecimal string encoding the intensity\n");
@@ -1597,9 +1748,9 @@ LASreaderTXTrescale::LASreaderTXTrescale(F64 x_scale_factor, F64 y_scale_factor,
   scale_factor[2] = z_scale_factor;
 }
 
-BOOL LASreaderTXTrescale::open(const char* file_name, const char* parse_string, I32 skip_lines, BOOL populate_header)
+BOOL LASreaderTXTrescale::open(const CHAR* file_name, U8 point_type, const CHAR* parse_string, I32 skip_lines, BOOL populate_header)
 {
-  if (!LASreaderTXT::open(file_name, parse_string, skip_lines, populate_header)) return FALSE;
+  if (!LASreaderTXT::open(file_name, point_type, parse_string, skip_lines, populate_header)) return FALSE;
   // do we need to change anything
   if (scale_factor[0] && (header.x_scale_factor != scale_factor[0]))
   {
@@ -1623,9 +1774,9 @@ LASreaderTXTreoffset::LASreaderTXTreoffset(F64 x_offset, F64 y_offset, F64 z_off
   this->offset[2] = z_offset;
 }
 
-BOOL LASreaderTXTreoffset::open(const char* file_name, const char* parse_string, I32 skip_lines, BOOL populate_header)
+BOOL LASreaderTXTreoffset::open(const CHAR* file_name, U8 point_type, const CHAR* parse_string, I32 skip_lines, BOOL populate_header)
 {
-  if (!LASreaderTXT::open(file_name, parse_string, skip_lines, populate_header)) return FALSE;
+  if (!LASreaderTXT::open(file_name, point_type, parse_string, skip_lines, populate_header)) return FALSE;
   // do we need to change anything
   if (header.x_offset != offset[0])
   {
@@ -1646,9 +1797,9 @@ LASreaderTXTrescalereoffset::LASreaderTXTrescalereoffset(F64 x_scale_factor, F64
 {
 }
 
-BOOL LASreaderTXTrescalereoffset::open(const char* file_name, const char* parse_string, I32 skip_lines, BOOL populate_header)
+BOOL LASreaderTXTrescalereoffset::open(const CHAR* file_name, U8 point_type, const CHAR* parse_string, I32 skip_lines, BOOL populate_header)
 {
-  if (!LASreaderTXT::open(file_name, parse_string, skip_lines, populate_header)) return FALSE;
+  if (!LASreaderTXT::open(file_name, point_type, parse_string, skip_lines, populate_header)) return FALSE;
   // do we need to change anything
   if (scale_factor[0] && (header.x_scale_factor != scale_factor[0]))
   {

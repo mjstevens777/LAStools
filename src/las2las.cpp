@@ -33,6 +33,9 @@
   
   CHANGE HISTORY:
   
+    23 October 2016 -- OGC WKT string stores COMPD_CS for projection + vertical
+    22 October 2016 -- new '-set_ogc_wkt_in_evlr' store to EVLR instead of VLR
+     1 January 2016 -- option '-set_ogc_wkt' to store CRS as OGC WKT string
      3 May 2015 -- improved up-conversion via '-set_version 1.4 -point_type 6'
      5 July 2012 -- added option to '-remove_original_vlr' 
      6 May 2012 -- added option to '-remove_tiling_vlr' 
@@ -74,7 +77,7 @@ static void usage(bool error=false, bool wait=false)
   fprintf(stderr,"las2las -remove_vlr 2 -scale_rgb_up -i in.las -o out.las\n");
   fprintf(stderr,"las2las -i in.las -keep_xy 630000 4834500 630500 4835000 -keep_z 10 100 -o out.las\n");
   fprintf(stderr,"las2las -i in.txt -iparse xyzit -keep_circle 630200 4834750 100 -oparse xyzit -o out.txt\n");
-  fprintf(stderr,"las2las -i in.las -keep_scan_angle -15 15 -o out.las\n");
+  fprintf(stderr,"las2las -i in.las -remove_padding -keep_scan_angle -15 15 -o out.las\n");
   fprintf(stderr,"las2las -i in.las -rescale 0.01 0.01 0.01 -reoffset 0 300000 0 -o out.las\n");
   fprintf(stderr,"las2las -i in.las -set_version 1.2 -keep_gpstime 46.5 47.5 -o out.las\n");
   fprintf(stderr,"las2las -i in.las -drop_intensity_below 10 -olaz -stdout > out.laz\n");
@@ -146,7 +149,9 @@ int main(int argc, char *argv[])
   int set_point_data_record_length = -1;
   int set_gps_time_endcoding = -1;
   // variable header changes
-  bool remove_extra_header = false;
+  bool set_ogc_wkt = false;
+  bool set_ogc_wkt_in_evlr = false;
+  bool remove_header_padding = false;
   bool remove_all_variable_length_records = false;
   int remove_variable_length_record = -1;
   int remove_variable_length_record_from = -1;
@@ -311,9 +316,19 @@ int main(int argc, char *argv[])
       set_version_minor = atoi(argv[i+1]);
       i+=1;
     }
-    else if (strcmp(argv[i],"-remove_extra") == 0)
+    else if (strcmp(argv[i],"-remove_padding") == 0)
     {
-      remove_extra_header = true;
+      remove_header_padding = true;
+    }
+    else if (strcmp(argv[i],"-set_ogc_wkt") == 0)
+    {
+      set_ogc_wkt = true;
+      set_ogc_wkt_in_evlr = false;
+    }
+    else if (strcmp(argv[i],"-set_ogc_wkt_in_evlr") == 0)
+    {
+      set_ogc_wkt = true;
+      set_ogc_wkt_in_evlr = true;
     }
     else if (strcmp(argv[i],"-remove_all_vlrs") == 0)
     {
@@ -434,14 +449,6 @@ int main(int argc, char *argv[])
       usage(true);
     }
   }
-
-  // make sure we do not corrupt the input file
-
-  if (lasreadopener.get_file_name() && laswriteopener.get_file_name() && (strcmp(lasreadopener.get_file_name(), laswriteopener.get_file_name()) == 0))
-  {
-    fprintf(stderr, "ERROR: input and output file name are identical\n");
-    usage(true);
-  }
     
   // possibly loop over multiple input files
 
@@ -510,6 +517,14 @@ int main(int argc, char *argv[])
         {
           lasreader->header.global_encoding |= 1;
         }
+      }
+    }
+
+    if (set_point_data_format > 5)
+    {
+      if (set_version_minor == -1)
+      {
+        set_version_minor = 4;
       }
     }
 
@@ -735,45 +750,6 @@ int main(int argc, char *argv[])
       point->init(&lasreader->header, lasreader->header.point_data_format, lasreader->header.point_data_record_length);
     }
 
-    // maybe we should remove some stuff
-
-    if (remove_extra_header)
-    {
-      lasreader->header.clean_user_data_in_header();
-      lasreader->header.clean_user_data_after_header();
-    }
-
-    if (remove_all_variable_length_records)
-    {
-      lasreader->header.clean_vlrs();
-      lasreader->header.clean_evlrs();
-    }
-    else
-    {
-      if (remove_variable_length_record != -1)
-      {
-        lasreader->header.remove_vlr(remove_variable_length_record);
-      }
-    
-      if (remove_variable_length_record_from != -1)
-      {
-        for (i = remove_variable_length_record_to; i >= remove_variable_length_record_from; i--)
-        {
-          lasreader->header.remove_vlr(i);
-        }
-      }
-    }
-
-    if (remove_tiling_vlr)
-    {
-      lasreader->header.clean_lastiling();
-    }
-
-    if (remove_original_vlr)
-    {
-      lasreader->header.clean_lasoriginal();
-    }
-
     // maybe we should add / change the projection information
     LASquantizer* reproject_quantizer = 0;
     LASquantizer* saved_quantizer = 0;
@@ -820,6 +796,119 @@ int main(int argc, char *argv[])
         }
         lasreader->header.del_geo_ascii_params();
       }
+
+      if (set_ogc_wkt) // maybe also set the OCG WKT 
+      {
+        I32 len = 0;
+        CHAR* ogc_wkt = 0;
+        if (geoprojectionconverter.get_ogc_wkt_from_projection(len, &ogc_wkt, !geoprojectionconverter.has_projection(false)))
+        {
+          if (set_ogc_wkt_in_evlr)
+          {
+            if (lasreader->header.version_minor >= 4)
+            {
+              lasreader->header.set_geo_ogc_wkt(len, ogc_wkt, TRUE);
+            }
+            else
+            {
+              fprintf(stderr, "WARNING: input file is LAS 1.%d. setting OGC WKT to VLR instead of EVLR ...\n", lasreader->header.version_minor);
+              lasreader->header.set_geo_ogc_wkt(len, ogc_wkt, FALSE);
+            }
+          }
+          else
+          {
+            lasreader->header.set_geo_ogc_wkt(len, ogc_wkt);
+          }
+          free(ogc_wkt);
+          if ((lasreader->header.version_minor >= 4) && (lasreader->header.point_data_format >= 6))
+          {
+            lasreader->header.set_global_encoding_bit(LAS_TOOLS_GLOBAL_ENCODING_BIT_OGC_WKT_CRS);
+          }
+        }
+        else
+        {
+          fprintf(stderr, "WARNING: cannot produce OCG WKT. ignoring '-set_ogc_wkt' for '%s'\n", lasreadopener.get_file_name());
+        }
+      }
+    }
+    else if (set_ogc_wkt) // maybe only set the OCG WKT 
+    {
+      if (lasreader->header.vlr_geo_keys)
+      {
+        geoprojectionconverter.set_projection_from_geo_keys(lasreader->header.vlr_geo_keys[0].number_of_keys, (GeoProjectionGeoKeys*)lasreader->header.vlr_geo_key_entries, lasreader->header.vlr_geo_ascii_params, lasreader->header.vlr_geo_double_params);
+        I32 len = 0;
+        CHAR* ogc_wkt = 0;
+        if (geoprojectionconverter.get_ogc_wkt_from_projection(len, &ogc_wkt))
+        {
+          if (set_ogc_wkt_in_evlr)
+          {
+            if (lasreader->header.version_minor >= 4)
+            {
+              lasreader->header.set_geo_ogc_wkt(len, ogc_wkt, TRUE);
+            }
+            else
+            {
+              fprintf(stderr, "WARNING: input file is LAS 1.%d. setting OGC WKT to VLR instead of EVLR ...\n", lasreader->header.version_minor);
+              lasreader->header.set_geo_ogc_wkt(len, ogc_wkt, FALSE);
+            }
+          }
+          else
+          {
+              lasreader->header.set_geo_ogc_wkt(len, ogc_wkt);
+          }
+          free(ogc_wkt);
+          if ((lasreader->header.version_minor >= 4) && (lasreader->header.point_data_format >= 6))
+          {
+            lasreader->header.set_global_encoding_bit(LAS_TOOLS_GLOBAL_ENCODING_BIT_OGC_WKT_CRS);
+          }
+        }
+        else
+        {
+          fprintf(stderr, "WARNING: cannot produce OCG WKT. ignoring '-set_ogc_wkt' for '%s'\n", lasreadopener.get_file_name());
+        }
+      }
+      else
+      {
+        fprintf(stderr, "WARNING: no projection information. ignoring '-set_ogc_wkt' for '%s'\n", lasreadopener.get_file_name());
+      }
+    }
+
+    // maybe we should remove some stuff
+
+    if (remove_header_padding)
+    {
+      lasreader->header.clean_user_data_in_header();
+      lasreader->header.clean_user_data_after_header();
+    }
+
+    if (remove_all_variable_length_records)
+    {
+      lasreader->header.clean_vlrs();
+    }
+    else
+    {
+      if (remove_variable_length_record != -1)
+      {
+        lasreader->header.remove_vlr(remove_variable_length_record);
+      }
+    
+      if (remove_variable_length_record_from != -1)
+      {
+        for (i = remove_variable_length_record_to; i >= remove_variable_length_record_from; i--)
+        {
+          lasreader->header.remove_vlr(i);
+        }
+      }
+    }
+
+    if (remove_tiling_vlr)
+    {
+      lasreader->header.clean_lastiling();
+    }
+
+    if (remove_original_vlr)
+    {
+      lasreader->header.clean_lasoriginal();
     }
 
     // do we need an extra pass
@@ -900,6 +989,16 @@ int main(int argc, char *argv[])
     {
       // create name from input name
       laswriteopener.make_file_name(lasreadopener.get_file_name());
+    }
+    else
+    {
+      // make sure we do not corrupt the input file
+
+      if (lasreadopener.get_file_name() && laswriteopener.get_file_name() && (strcmp(lasreadopener.get_file_name(), laswriteopener.get_file_name()) == 0))
+      {
+        fprintf(stderr, "ERROR: input and output file name are identical: '%s'\n", lasreadopener.get_file_name());
+        usage(true);
+      }
     }
 
     // prepare the header for the surviving points

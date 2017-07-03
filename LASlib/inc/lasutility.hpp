@@ -13,7 +13,7 @@
   
   COPYRIGHT:
   
-    (c) 2007-2015, martin isenburg, rapidlasso - fast tools to catch reality
+    (c) 2007-2017, martin isenburg, rapidlasso - fast tools to catch reality
 
     This is free software; you can redistribute and/or modify it under the
     terms of the GNU Lesser General Licence as published by the Free Software
@@ -24,6 +24,7 @@
   
   CHANGE HISTORY:
   
+     1 June 2017 -- improved "fluff" detection
      3 May 2015 -- updated LASinventory to handle LAS 1.4 content 
     25 December 2010 -- created after swinging in Mara's hammock for hours
   
@@ -69,6 +70,10 @@ public:
   I64 classification_extended_overlap;
   LASpoint min;
   LASpoint max;
+  U16 xyz_low_digits_10[3];
+  U16 xyz_low_digits_100[3];
+  U16 xyz_low_digits_1000[3];
+  U16 xyz_low_digits_10000[3];
   I64 xyz_fluff_10[3];
   I64 xyz_fluff_100[3];
   I64 xyz_fluff_1000[3];
@@ -98,13 +103,15 @@ public:
   void report(FILE* file, const CHAR* name=0, const CHAR* name_avg=0) const;
   void reset();
   F32 get_step() const;
-  LASbin(F32 step);
+  LASbin(F32 step, F32 clamp_min=F32_MIN, F32 clamp_max=F32_MAX);
   ~LASbin();
 private:
   void add_to_bin(I32 bin);
   F64 total;
   I64 count;
   F32 step;
+  F32 clamp_min;
+  F32 clamp_max;
   F32 one_over_step;
   BOOL first;
   I32 anker;
@@ -141,6 +148,9 @@ private:
   LASbin* intensity_bin;
   LASbin* classification_bin;
   LASbin* scan_angle_bin;
+  LASbin* extended_scan_angle_bin;
+  LASbin* return_number_bin;
+  LASbin* number_of_returns_bin;
   LASbin* user_data_bin;
   LASbin* point_source_id_bin;
   LASbin* gps_time_bin;

@@ -49,7 +49,7 @@ class LASfilter;
 class LAStransform;
 class ByteStreamIn;
 
-class LASreader
+class LASLIB_DLL LASreader
 {
 public:
   LASheader header;
@@ -147,7 +147,7 @@ private:
 
 #include "laswaveform13reader.hpp"
 
-class LASreadOpener
+class LASLIB_DLL LASreadOpener
 {
 public:
   void set_io_ibuffer_size(I32 io_ibuffer_size);
@@ -155,6 +155,7 @@ public:
   U32 get_file_name_number() const;
   U32 get_file_name_current() const;
   const CHAR* get_file_name() const;
+  const CHAR* get_file_name_only() const;
   const CHAR* get_file_name(U32 number) const;
   void set_file_name(const CHAR* file_name, BOOL unique=FALSE);
   BOOL add_file_name(const CHAR* file_name, BOOL unique=FALSE);
@@ -166,6 +167,7 @@ public:
   BOOL is_merged() const { return merged; };
   void set_buffer_size(const F32 buffer_size);
   F32 get_buffer_size() const;
+  void set_unbuffered(const BOOL unbuffered);
   void set_neighbor_file_name(const CHAR* neighbor_file_name, BOOL unique=FALSE);
   BOOL add_neighbor_file_name(const CHAR* neighbor_file_name, BOOL unique=FALSE);
   void set_auto_reoffset(const BOOL auto_reoffset);
@@ -182,7 +184,8 @@ public:
   void set_scale_intensity(F32 scale_intensity);
   void set_translate_scan_angle(F32 translate_scan_angle);
   void set_scale_scan_angle(F32 scale_scan_angle);
-  void add_attribute(I32 data_type, const CHAR* name, const CHAR* description=0, F64 scale=1.0, F64 offset=0.0);
+  void add_attribute(I32 data_type, const CHAR* name, const CHAR* description=0, F64 scale=1.0, F64 offset=0.0, F64 pre_scale=1.0, F64 pre_offset=0.0, F64 no_data=F64_MAX);
+  BOOL set_point_type(U8 point_type);
   void set_parse_string(const CHAR* parse_string);
   void set_skip_lines(I32 skip_lines);
   void set_populate_header(BOOL populate_header);
@@ -190,6 +193,7 @@ public:
   void set_pipe_on(BOOL pipe_on);
   const CHAR* get_parse_string() const;
   void usage() const;
+  void set_decompress_selective(U32 decompress_selective);
   void set_inside_tile(const F32 ll_x, const F32 ll_y, const F32 size);
   void set_inside_circle(const F64 center_x, const F64 center_y, const F64 radius);
   void set_inside_rectangle(const F64 min_x, const F64 min_y, const F64 max_x, const F64 max_y);
@@ -205,7 +209,8 @@ public:
   void set_transform(LAStransform* transform);
   const LAStransform* get_transform() { return transform; };
   void reset();
-  LASreader* open(const CHAR* other_file_name=0);
+  const CHAR* get_temp_file_base() const { return temp_file_base; };
+  LASreader* open(const CHAR* other_file_name=0, BOOL reset_after_other=TRUE);
   BOOL reopen(LASreader* lasreader, BOOL remain_buffered=TRUE);
   LASwaveform13reader* open_waveform13(const LASheader* lasheader);
   LASreadOpener();
@@ -223,6 +228,8 @@ private:
   U32 file_name_allocated;
   U32 file_name_current;
   F32 buffer_size;
+  BOOL unbuffered;
+  CHAR* temp_file_base;
   CHAR** neighbor_file_names;
   U32 neighbor_file_name_number;
   U32 neighbor_file_name_allocated;
@@ -245,6 +252,10 @@ private:
   CHAR* attribute_descriptions[10];
   F64 attribute_scales[10];
   F64 attribute_offsets[10];
+  F64 attribute_pre_scales[10];
+  F64 attribute_pre_offsets[10];
+  F64 attribute_no_datas[10];
+  U8 point_type;
   CHAR* parse_string;
   I32 skip_lines;
   BOOL populate_header;
@@ -257,6 +268,9 @@ private:
   LASindex* index;
   LASfilter* filter;
   LAStransform* transform;
+
+  // optional selective decompression (compressed new LAS 1.4 point types only)
+  U32 decompress_selective;
 
   // optional area-of-interest query (spatially indexed) 
   F32* inside_tile;

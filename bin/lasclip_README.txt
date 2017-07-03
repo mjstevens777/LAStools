@@ -15,6 +15,12 @@
   overlaps and they must all form closed loops (e.g. last point
   and first point are identical).
 
+  Sometimes polygons describe donut-shaped objects such as lakes
+  with an island. Here the winding order of the lake with be CW
+  and that of the island will be CCW. In order to correcly clip
+  or classify only the lake (but now the island) the command line
+  option '-donuts' needs to be added.
+
   There is an option called '-split' that splits the input LiDAR
   (be it one LAS/LAZ file or several on-the-fly '-merged' LAS/LAZ
   files) into one output file per polygon. 
@@ -24,6 +30,10 @@
   3 4 5 6' and they will all be written back to the clipped or
   the reclassified file. Then the clipping or the reclassifying
   will be applied exclusively to the other points.
+
+  You can also ignore points based on their return counts with
+  '-ignore_first_of_many', '-ignore_intermediate', '-ignore_last',
+  '-ignore_last_of_many', '-ignore_first', '-ignore_single'.
 
   There is an example SHP file called "TO_city_hall.shp" that
   can be used together with the TO_core_last_zoom.las or the

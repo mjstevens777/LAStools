@@ -51,8 +51,9 @@ BOOL LASinventory::init(const LASheader* header)
   {
     U32 i;
     extended_number_of_point_records = (header->number_of_point_records ? header->number_of_point_records : header->extended_number_of_point_records);
-    for (i = 0; i < 5; i++) extended_number_of_points_by_return[i] = (header->number_of_points_by_return[i] ? header->number_of_points_by_return[i] : header->extended_number_of_points_by_return[i]);
-    for (i = 5; i < 16; i++) extended_number_of_points_by_return[i] = header->extended_number_of_points_by_return[i];
+    extended_number_of_points_by_return[0] = 0;
+    for (i = 0; i < 5; i++) extended_number_of_points_by_return[i+1] = (header->number_of_points_by_return[i] ? header->number_of_points_by_return[i] : header->extended_number_of_points_by_return[i]);
+    for (i = 5; i < 15; i++) extended_number_of_points_by_return[i+1] = header->extended_number_of_points_by_return[i];
     max_X = header->get_X(header->max_x);
     min_X = header->get_X(header->min_x);
     max_Y = header->get_Y(header->max_y);
@@ -181,22 +182,43 @@ BOOL LASsummary::add(const LASpoint* point)
   {
     number_of_points_by_return[point->get_extended_return_number()]++;
     number_of_returns[point->get_extended_number_of_returns()]++;
-    extended_classification[point->get_extended_classification()]++;
+    if (point->get_extended_classification() > 31)
+    {
+      extended_classification[point->get_extended_classification()]++;
+    }
+    else
+    {
+      classification[point->get_classification()]++;
+    }
     if (point->get_extended_overlap_flag()) classification_extended_overlap++;
   }
   else
   {
     number_of_points_by_return[point->get_return_number()]++;
+    classification[point->get_classification()]++;
     number_of_returns[point->get_number_of_returns()]++;
   }
-  classification[point->get_classification()]++;
   if (point->get_synthetic_flag()) classification_synthetic++;
   if (point->get_keypoint_flag()) classification_keypoint++;
   if (point->get_withheld_flag()) classification_withheld++;
   if (first)
   {
+    // initialize min and max
     min = *point;
     max = *point;
+    // initialize fluff detection
+    xyz_low_digits_10[0] = (U16)(point->get_X()%10);
+    xyz_low_digits_10[1] = (U16)(point->get_Y()%10);
+    xyz_low_digits_10[2] = (U16)(point->get_Z()%10);
+    xyz_low_digits_100[0] = (U16)(point->get_X()%100);
+    xyz_low_digits_100[1] = (U16)(point->get_Y()%100);
+    xyz_low_digits_100[2] = (U16)(point->get_Z()%100);
+    xyz_low_digits_1000[0] = (U16)(point->get_X()%1000);
+    xyz_low_digits_1000[1] = (U16)(point->get_Y()%1000);
+    xyz_low_digits_1000[2] = (U16)(point->get_Z()%1000);
+    xyz_low_digits_10000[0] = (U16)(point->get_X()%10000);
+    xyz_low_digits_10000[1] = (U16)(point->get_Y()%10000);
+    xyz_low_digits_10000[2] = (U16)(point->get_Z()%10000);
     first = FALSE;
   }
   else
@@ -275,48 +297,48 @@ BOOL LASsummary::add(const LASpoint* point)
       else if (point->wavepacket.getZt() > max.wavepacket.getZt()) max.wavepacket.setZt(point->wavepacket.getZt());
     }
   }
-  if ((point->get_X()%10) == 0)
+  if (((U16)(point->get_X()%10)) == xyz_low_digits_10[0])
   {
     xyz_fluff_10[0]++;
-    if ((point->get_X()%100) == 0)
+    if (((U16)(point->get_X()%100)) == xyz_low_digits_100[0])
     {
       xyz_fluff_100[0]++;
-      if ((point->get_X()%1000) == 0)
+      if (((U16)(point->get_X()%1000)) == xyz_low_digits_1000[0])
       {
         xyz_fluff_1000[0]++;
-        if ((point->get_X()%10000) == 0)
+        if (((U16)(point->get_X()%10000)) == xyz_low_digits_10000[0])
         {
           xyz_fluff_10000[0]++;
         }
       }
     }
   }
-  if ((point->get_Y()%10) == 0)
+  if (((U16)(point->get_Y()%10)) == xyz_low_digits_10[1])
   {
     xyz_fluff_10[1]++;
-    if ((point->get_Y()%100) == 0)
+    if (((U16)(point->get_Y()%100)) == xyz_low_digits_100[1])
     {
       xyz_fluff_100[1]++;
-      if ((point->get_Y()%1000) == 0)
+      if (((U16)(point->get_Y()%1000)) == xyz_low_digits_1000[1])
       {
         xyz_fluff_1000[1]++;
-        if ((point->get_Y()%10000) == 0)
+        if (((U16)(point->get_Y()%10000)) == xyz_low_digits_10000[1])
         {
           xyz_fluff_10000[1]++;
         }
       }
     }
   }
-  if ((point->get_Z()%10) == 0)
+  if (((U16)(point->get_Z()%10)) == xyz_low_digits_10[2])
   {
     xyz_fluff_10[2]++;
-    if ((point->get_Z()%100) == 0)
+    if (((U16)(point->get_Z()%100)) == xyz_low_digits_100[2])
     {
       xyz_fluff_100[2]++;
-      if ((point->get_Z()%1000) == 0)
+      if (((U16)(point->get_Z()%1000)) == xyz_low_digits_1000[2])
       {
         xyz_fluff_1000[2]++;
-        if ((point->get_Z()%10000) == 0)
+        if (((U16)(point->get_Z()%10000)) == xyz_low_digits_10000[2])
         {
           xyz_fluff_10000[2]++;
         }
@@ -331,12 +353,14 @@ F32 LASbin::get_step() const
   return step;
 }
 
-LASbin::LASbin(F32 step)
+LASbin::LASbin(F32 step, F32 clamp_min, F32 clamp_max)
 {
   total = 0;
   count = 0;
   this->step = step;
   this->one_over_step = 1.0f/step;
+  this->clamp_min = clamp_min;
+  this->clamp_max = clamp_max;
   first = TRUE;
   size_pos = 0;
   size_neg = 0;
@@ -356,6 +380,14 @@ LASbin::~LASbin()
 
 void LASbin::add(I32 item)
 {
+  if (item > clamp_max)
+  {
+    item = (I32)clamp_max;
+  }
+  else if (item < clamp_min)
+  {
+    item = (I32)clamp_min;
+  }
   total += item;
   count++;
   I32 bin = I32_FLOOR(one_over_step*item);
@@ -364,6 +396,14 @@ void LASbin::add(I32 item)
 
 void LASbin::add(F64 item)
 {
+  if (item > clamp_max)
+  {
+    item = clamp_max;
+  }
+  else if (item < clamp_min)
+  {
+    item = clamp_min;
+  }
   total += item;
   count++;
   I32 bin = I32_FLOOR(one_over_step*item);
@@ -372,6 +412,14 @@ void LASbin::add(F64 item)
 
 void LASbin::add(I64 item)
 {
+  if (item > clamp_max)
+  {
+    item = (I64)clamp_max;
+  }
+  else if (item < clamp_min)
+  {
+    item = (I64)clamp_min;
+  }
   total += item;
   count++;
   I32 bin = I32_FLOOR(one_over_step*item);
@@ -720,10 +768,17 @@ void LASbin::report(FILE* file, const CHAR* name, const CHAR* name_avg) const
   }
   if (count)
   {
+#ifdef _WIN32
     if (name)
-      fprintf(file, "  average %s %g\012", name, total/count);
+      fprintf(file, "  average %s %g for %I64d element(s)\012", name, total/count, count);
     else
-      fprintf(file, "  average %g\012", total/count);
+      fprintf(file, "  average %g for %I64d element(s)\012", total/count, count);
+#else
+    if (name)
+      fprintf(file, "  average %s %g for %lld element(s)\012", name, total/count, count);
+    else
+      fprintf(file, "  average %g for %lld element(s)\012", total/count, count);
+#endif
   }
 }
 
@@ -763,6 +818,9 @@ LAShistogram::LAShistogram()
   intensity_bin = 0;
   classification_bin = 0;
   scan_angle_bin = 0;
+  extended_scan_angle_bin = 0;
+  return_number_bin = 0;
+  number_of_returns_bin = 0;
   user_data_bin = 0;
   point_source_id_bin = 0;
   gps_time_bin = 0;
@@ -800,6 +858,9 @@ LAShistogram::~LAShistogram()
   if (intensity_bin) delete intensity_bin;
   if (classification_bin) delete classification_bin;
   if (scan_angle_bin) delete scan_angle_bin;
+  if (extended_scan_angle_bin) delete extended_scan_angle_bin;
+  if (return_number_bin) delete return_number_bin;
+  if (number_of_returns_bin) delete number_of_returns_bin;
   if (user_data_bin) delete user_data_bin;
   if (point_source_id_bin) delete point_source_id_bin;
   if (gps_time_bin) delete gps_time_bin;
@@ -874,6 +935,9 @@ I32 LAShistogram::unparse(CHAR* string) const
   if (intensity_bin) n += sprintf(&string[n], "-histo intensity %g ", intensity_bin->get_step());
   if (classification_bin) n += sprintf(&string[n], "-histo classification %g ", classification_bin->get_step());
   if (scan_angle_bin) n += sprintf(&string[n], "-histo scan_angle %g ", scan_angle_bin->get_step());
+  if (extended_scan_angle_bin) n += sprintf(&string[n], "-histo extended_scan_angle %g ", extended_scan_angle_bin->get_step());
+  if (return_number_bin) n += sprintf(&string[n], "-histo return_number %g ", return_number_bin->get_step());
+  if (number_of_returns_bin) n += sprintf(&string[n], "-histo number_of_returns %g ", number_of_returns_bin->get_step());
   if (user_data_bin) n += sprintf(&string[n], "-histo user_data %g ", user_data_bin->get_step());
   if (point_source_id_bin) n += sprintf(&string[n], "-histo point_source %g ", point_source_id_bin->get_step());
   if (gps_time_bin) n += sprintf(&string[n], "-histo gps_time %g ", gps_time_bin->get_step());
@@ -911,8 +975,14 @@ BOOL LAShistogram::histo(const CHAR* name, F32 step)
     intensity_bin = new LASbin(step);
   else if (strcmp(name, "classification") == 0)
     classification_bin = new LASbin(step);
+  else if (strstr(name, "extended_scan_angle") != 0)
+    extended_scan_angle_bin = new LASbin(step);
   else if (strstr(name, "scan_angle") != 0)
     scan_angle_bin = new LASbin(step);
+  else if (strstr(name, "return_number") != 0)
+    return_number_bin = new LASbin(step);
+  else if (strstr(name, "number_of_returns") != 0)
+    number_of_returns_bin = new LASbin(step);
   else if (strstr(name, "user_data") != 0)
     user_data_bin = new LASbin(step);
   else if (strstr(name, "point_source") != 0)
@@ -1010,9 +1080,18 @@ void LAShistogram::add(const LASpoint* point)
   if (X_bin) X_bin->add(point->get_X());
   if (Y_bin) Y_bin->add(point->get_Y());
   if (Z_bin) Z_bin->add(point->get_Z());
-  if (intensity_bin) intensity_bin->add(point->intensity);
-  if (classification_bin) classification_bin->add(point->classification);
-  if (scan_angle_bin) scan_angle_bin->add(point->scan_angle_rank);
+  if (intensity_bin) intensity_bin->add(point->get_intensity());
+  if (classification_bin) classification_bin->add(point->get_classification());
+  if (scan_angle_bin)
+  {
+    scan_angle_bin->add(point->get_scan_angle());
+  }
+  if (extended_scan_angle_bin)
+  {
+    extended_scan_angle_bin->add(point->extended_scan_angle);
+  }
+  if (return_number_bin) return_number_bin->add(point->get_return_number());
+  if (number_of_returns_bin) number_of_returns_bin->add(point->get_number_of_returns());
   if (user_data_bin) user_data_bin->add(point->user_data);
   if (point_source_id_bin) point_source_id_bin->add(point->point_source_ID);
   if (gps_time_bin) gps_time_bin->add(point->gps_time);
@@ -1030,11 +1109,23 @@ void LAShistogram::add(const LASpoint* point)
   if (wavepacket_size_bin) wavepacket_size_bin->add((I32)point->wavepacket.getSize());
   if (wavepacket_location_bin) wavepacket_location_bin->add(point->wavepacket.getLocation());
   // averages bins
-  if (classification_bin_intensity) classification_bin_intensity->add(point->classification, point->intensity);
-  if (classification_bin_scan_angle) classification_bin_scan_angle->add(point->classification, point->scan_angle_rank);
-  if (scan_angle_bin_z) scan_angle_bin_z->add(point->scan_angle_rank, point->get_Z());
-  if (scan_angle_bin_number_of_returns) scan_angle_bin_number_of_returns->add(point->scan_angle_rank, point->number_of_returns);
-  if (scan_angle_bin_intensity) scan_angle_bin_intensity->add(point->scan_angle_rank, point->intensity);
+  if (classification_bin_intensity) classification_bin_intensity->add(point->get_classification(), point->get_intensity());
+  if (classification_bin_scan_angle)
+  {
+    classification_bin_scan_angle->add((F64)point->get_classification(), (F64)point->get_scan_angle());
+  }
+  if (scan_angle_bin_z)
+  {
+    scan_angle_bin_z->add((F64)point->get_scan_angle(), (F64)point->get_Z());
+  }
+  if (scan_angle_bin_number_of_returns)
+  {
+    scan_angle_bin_number_of_returns->add((F64)point->get_scan_angle(), (F64)point->get_extended_number_of_returns());
+  }
+  if (scan_angle_bin_intensity)
+  {
+    scan_angle_bin_intensity->add((F64)point->get_scan_angle(), (F64)point->get_intensity());
+  }
   if (return_map_bin_intensity)
   {
     int n = point->number_of_returns;
@@ -1055,6 +1146,9 @@ void LAShistogram::report(FILE* file) const
   if (intensity_bin) intensity_bin->report(file, "intensity");
   if (classification_bin) classification_bin->report(file, "classification");
   if (scan_angle_bin) scan_angle_bin->report(file, "scan angle");
+  if (extended_scan_angle_bin) extended_scan_angle_bin->report(file, "extended scan angle");
+  if (return_number_bin) return_number_bin->report(file, "return_number");
+  if (number_of_returns_bin) number_of_returns_bin->report(file, "number_of_returns");
   if (user_data_bin) user_data_bin->report(file, "user data");
   if (point_source_id_bin) point_source_id_bin->report(file, "point source id");
   if (gps_time_bin) gps_time_bin->report(file, "gps_time");
@@ -1092,6 +1186,9 @@ void LAShistogram::reset()
   if (intensity_bin) intensity_bin->reset();
   if (classification_bin) classification_bin->reset();
   if (scan_angle_bin) scan_angle_bin->reset();
+  if (extended_scan_angle_bin) extended_scan_angle_bin->reset();
+  if (return_number_bin) return_number_bin->reset();
+  if (number_of_returns_bin) number_of_returns_bin->reset();
   if (user_data_bin) user_data_bin->reset();
   if (point_source_id_bin) point_source_id_bin->reset();
   if (gps_time_bin) gps_time_bin->reset();
@@ -1291,13 +1388,11 @@ BOOL LASoccupancyGrid::occupied(I32 pos_x, I32 pos_y) const
   }
   pos_y = pos_y - anker;
   U32 array_size;
-  const I32* ankers;
   const U32* const * array;
   const U16* array_sizes;
   if (pos_y < 0)
   {
     pos_y = -pos_y - 1;
-    ankers = minus_ankers;
     if ((U32)pos_y < minus_plus_size && minus_plus_sizes[pos_y])
     {
       pos_x -= minus_ankers[pos_y];
@@ -1322,7 +1417,6 @@ BOOL LASoccupancyGrid::occupied(I32 pos_x, I32 pos_y) const
   }
   else
   {
-    ankers = plus_ankers;
     if ((U32)pos_y < plus_plus_size && plus_plus_sizes[pos_y])
     {
       pos_x -= plus_ankers[pos_y];

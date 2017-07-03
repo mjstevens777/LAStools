@@ -20,7 +20,7 @@
   
   COPYRIGHT:
   
-    (c) 2007-12, martin isenburg, rapidlasso - fast tools to catch reality
+    (c) 2007-2017, martin isenburg, rapidlasso - fast tools to catch reality
 
     This is free software; you can redistribute and/or modify it under the
     terms of the GNU Lesser General Licence as published by the Free Software
@@ -30,8 +30,11 @@
     implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   
   CHANGE HISTORY:
-  
-    4 December 2011 -- added option to set classification with '-set_class 2'
+
+     7 April 2017 -- new option to '-set_point_type 6' for new LAS 1.4 point types 
+    17 January 2016 -- pre-scaling and pre-offsetting of "extra bytes" attributes
+     1 January 2016 -- option '-set_ogc_wkt' to store CRS as OGC WKT string
+     4 December 2011 -- added option to set classification with '-set_classification 2'
     22 April 2011 -- added command-line flags to specify the projection VLRs
     20 March 2011 -- added capability to read *.zip, *.rar, and *.7z directly
     22 February 2011 -- added option to scale the intensity and scan_angle
@@ -70,7 +73,7 @@ void usage(bool error=false, bool wait=false)
   fprintf(stderr,"  -stdin (pipe from stdin)\n");
   fprintf(stderr,"usage:\n");
   fprintf(stderr,"txt2las -parse tsxyz -i lidar.txt.gz\n");
-  fprintf(stderr,"txt2las -parse xyzairn -i lidar.zip -utm 17T -vertical_navd88 -olaz -set_class 2 -quiet\n");
+  fprintf(stderr,"txt2las -parse xyzairn -i lidar.zip -utm 17T -vertical_navd88 -olaz -set_classification 2 -quiet\n");
   fprintf(stderr,"unzip -p lidar.zip | txt2las -parse xyz -stdin -o lidar.las -longlat -elevation_survey_feet\n");
   fprintf(stderr,"txt2las -i lidar.zip -parse txyzar -scale_scan_angle 57.3 -o lidar.laz\n");
   fprintf(stderr,"txt2las -skip 5 -parse xyz -i lidar.rar -set_file_creation 28 2011 -o lidar.las\n");
@@ -150,9 +153,9 @@ int main(int argc, char *argv[])
   int file_creation_year = -1;
   int set_version_major = -1;
   int set_version_minor = -1;
-  int set_classification = -1;
   char* set_system_identifier = 0;
   char* set_generating_software = 0;
+  bool set_ogc_wkt = false;
   double start_time = 0.0;
 
   LASreadOpener lasreadopener;
@@ -187,7 +190,7 @@ int main(int argc, char *argv[])
           fprintf(stderr,"ERROR: '%s' needs 1 argument: factor\n", argv[i]);
           usage(true);
         }
-        lasreadopener.set_scale_intensity(atof(argv[i+1]));
+        lasreadopener.set_scale_intensity((F32)atof(argv[i+1]));
         *argv[i]='\0'; *argv[i+1]='\0'; i+=1;
       }
       else if (strcmp(argv[i],"-translate_intensity") == 0)
@@ -197,7 +200,7 @@ int main(int argc, char *argv[])
           fprintf(stderr,"ERROR: '%s' needs 1 argument: offset\n", argv[i]);
           usage(true);
         }
-        lasreadopener.set_translate_intensity(atof(argv[i+1]));
+        lasreadopener.set_translate_intensity((F32)atof(argv[i+1]));
         *argv[i]='\0'; *argv[i+1]='\0'; i+=1;
       }
       else if (strcmp(argv[i],"-translate_then_scale_intensity") == 0)
@@ -207,8 +210,8 @@ int main(int argc, char *argv[])
           fprintf(stderr,"ERROR: '%s' needs 2 arguments: offset factor\n", argv[i]);
           usage(true);
         }
-        lasreadopener.set_translate_intensity(atof(argv[i+1]));
-        lasreadopener.set_scale_intensity(atof(argv[i+2]));
+        lasreadopener.set_translate_intensity((F32)atof(argv[i+1]));
+        lasreadopener.set_scale_intensity((F32)atof(argv[i+2]));
         *argv[i]='\0'; *argv[i+1]='\0'; *argv[i+2]='\0'; i+=2;
       }
       else if (strcmp(argv[i],"-scale_scan_angle") == 0)
@@ -218,7 +221,7 @@ int main(int argc, char *argv[])
           fprintf(stderr,"ERROR: '%s' needs 1 argument: factor\n", argv[i]);
           usage(true);
         }
-        lasreadopener.set_scale_scan_angle(atof(argv[i+1]));
+        lasreadopener.set_scale_scan_angle((F32)atof(argv[i+1]));
         *argv[i]='\0'; *argv[i+1]='\0'; i+=1;
       }
     }
@@ -286,6 +289,27 @@ int main(int argc, char *argv[])
       i++;
       lasreadopener.set_parse_string(argv[i]);
     }
+    else if (strcmp(argv[i],"-set_point_type") == 0 || strcmp(argv[i],"-set_point_data_format") == 0 || strcmp(argv[i],"-point_type") == 0)
+    {
+      if ((i+1) >= argc)
+      {
+        fprintf(stderr,"ERROR: '%s' needs 1 argument: point_type\n", argv[i]);
+        usage(true);
+      }
+      i++;
+      I32 point_type;
+      if (sscanf(argv[i],"%d", &point_type) != 1)
+      {
+        fprintf(stderr, "ERROR: cannot understand argument '%s' of '%s'\n", argv[i], argv[i-1]);
+        usage(true);
+      }
+      if (point_type < 0 || point_type > 8 || point_type == 4 || point_type == 5)
+      {
+        fprintf(stderr, "ERROR: point type %d not supported\n", point_type);
+        usage(true);
+      }
+      lasreadopener.set_point_type((U8)point_type);
+    }
     else if (strcmp(argv[i],"-skip") == 0)
     {
       if ((i+1) >= argc)
@@ -328,7 +352,7 @@ int main(int argc, char *argv[])
       sscanf(argv[i], "%lf", &(offset[2]));
       lasreadopener.set_offset(offset);
     }
-    else if (strcmp(argv[i],"-add_extra") == 0)
+    else if (strcmp(argv[i],"-add_extra") == 0 || strcmp(argv[i],"-add_attribute") == 0)
     {
       if ((i+3) >= argc)
       {
@@ -337,10 +361,34 @@ int main(int argc, char *argv[])
       }
       if (((i+4) < argc) && (atof(argv[i+4]) != 0.0))
       {
-        if (((i+5) < argc) && (atof(argv[i+5]) != 0.0))
+        if (((i+5) < argc) && ((atof(argv[i+5]) != 0.0) || (strcmp(argv[i+5], "0") == 0) || (strcmp(argv[i+5], "0.0") == 0)))
         {
-          lasreadopener.add_attribute(atoi(argv[i+1]), argv[i+2], argv[i+3], atof(argv[i+4]), atof(argv[i+5]));
-          i+=5;
+          if (((i+6) < argc) && ((atof(argv[i+6]) != 0.0) || (strcmp(argv[i+6], "0") == 0) || (strcmp(argv[i+6], "0.0") == 0)))
+          {
+            if (((i+7) < argc) && ((atof(argv[i+7]) != 0.0) || (strcmp(argv[i+7], "0") == 0) || (strcmp(argv[i+7], "0.0") == 0)))
+            {
+              if (((i+8) < argc) && ((atof(argv[i+8]) != 0.0) || (strcmp(argv[i+8], "0") == 0) || (strcmp(argv[i+8], "0.0") == 0)))
+              {
+                lasreadopener.add_attribute(atoi(argv[i+1]), argv[i+2], argv[i+3], atof(argv[i+4]), atof(argv[i+5]), atof(argv[i+6]), atof(argv[i+7]), atof(argv[i+8]));
+                i+=8;
+              }
+              else
+              {
+                lasreadopener.add_attribute(atoi(argv[i+1]), argv[i+2], argv[i+3], atof(argv[i+4]), atof(argv[i+5]), atof(argv[i+6]), atof(argv[i+7]));
+                i+=7;
+              }
+            }
+            else
+            { 
+              lasreadopener.add_attribute(atoi(argv[i+1]), argv[i+2], argv[i+3], atof(argv[i+4]), atof(argv[i+5]), atof(argv[i+6]));
+              i+=6;
+            }
+          }
+          else
+          { 
+            lasreadopener.add_attribute(atoi(argv[i+1]), argv[i+2], argv[i+3], atof(argv[i+4]), atof(argv[i+5]));
+            i+=5;
+          }
         }
         else
         {
@@ -366,16 +414,6 @@ int main(int argc, char *argv[])
       i++;
       sscanf(argv[i], "%d", &file_creation_year);
     }
-    else if (strcmp(argv[i],"-set_class") == 0 || strcmp(argv[i],"-set_classification") == 0)
-    {
-      if ((i+1) >= argc)
-      {
-        fprintf(stderr,"ERROR: '%s' needs 1 argument: value\n", argv[i]);
-        usage(true);
-      }
-      i++;
-      set_classification = atoi(argv[i]);
-    }
     else if (strcmp(argv[i],"-set_system_identifier") == 0)
     {
       if ((i+1) >= argc)
@@ -395,6 +433,10 @@ int main(int argc, char *argv[])
       }
       i++;
       set_generating_software = argv[i];
+    }
+    else if (strcmp(argv[i],"-set_ogc_wkt") == 0)
+    {
+      set_ogc_wkt = true;
     }
     else if (strcmp(argv[i],"-set_version") == 0)
     {
@@ -520,7 +562,18 @@ int main(int argc, char *argv[])
 #else
         fprintf(stderr, "npoints %lld min %g %g %g max %g %g %g\n", lasreader->npoints, lasreader->header.min_x, lasreader->header.min_y, lasreader->header.min_z, lasreader->header.max_x, lasreader->header.max_y, lasreader->header.max_z);
 #endif
-        fprintf(stderr, "return histogram %d %d %d %d %d\n", lasreader->header.number_of_points_by_return[0], lasreader->header.number_of_points_by_return[1], lasreader->header.number_of_points_by_return[2], lasreader->header.number_of_points_by_return[3], lasreader->header.number_of_points_by_return[4]);
+        if (lasreader->header.point_data_format > 5)
+        {
+#ifdef _WIN32
+          fprintf(stderr, "return histogram %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d\n", lasreader->header.extended_number_of_points_by_return[0], lasreader->header.extended_number_of_points_by_return[1], lasreader->header.extended_number_of_points_by_return[2], lasreader->header.extended_number_of_points_by_return[3], lasreader->header.extended_number_of_points_by_return[4], lasreader->header.extended_number_of_points_by_return[5], lasreader->header.extended_number_of_points_by_return[6], lasreader->header.extended_number_of_points_by_return[7], lasreader->header.extended_number_of_points_by_return[8], lasreader->header.extended_number_of_points_by_return[9], lasreader->header.extended_number_of_points_by_return[10], lasreader->header.extended_number_of_points_by_return[11], lasreader->header.extended_number_of_points_by_return[12], lasreader->header.extended_number_of_points_by_return[13], lasreader->header.extended_number_of_points_by_return[14]); 
+#else
+          fprintf(stderr, "return histogram %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld %lld\n", lasreader->header.extended_number_of_points_by_return[0], lasreader->header.extended_number_of_points_by_return[1], lasreader->header.extended_number_of_points_by_return[2], lasreader->header.extended_number_of_points_by_return[3], lasreader->header.extended_number_of_points_by_return[4], lasreader->header.extended_number_of_points_by_return[5], lasreader->header.extended_number_of_points_by_return[6], lasreader->header.extended_number_of_points_by_return[7], lasreader->header.extended_number_of_points_by_return[8], lasreader->header.extended_number_of_points_by_return[9], lasreader->header.extended_number_of_points_by_return[10], lasreader->header.extended_number_of_points_by_return[11], lasreader->header.extended_number_of_points_by_return[12], lasreader->header.extended_number_of_points_by_return[13], lasreader->header.extended_number_of_points_by_return[14]); 
+#endif
+        }
+        else
+        {
+          fprintf(stderr, "return histogram %d %d %d %d %d\n", lasreader->header.number_of_points_by_return[0], lasreader->header.number_of_points_by_return[1], lasreader->header.number_of_points_by_return[2], lasreader->header.number_of_points_by_return[3], lasreader->header.number_of_points_by_return[4]);
+        }
         fprintf(stderr,"took %g sec.\n", taketime()-start_time); start_time = taketime();
       }
 
@@ -622,6 +675,25 @@ int main(int argc, char *argv[])
         lasreader->header.del_geo_double_params();
       }
       lasreader->header.del_geo_ascii_params();
+
+      if (set_ogc_wkt) // maybe also set the OCG WKT 
+      {
+        I32 len = 0;
+        CHAR* ogc_wkt = 0;
+        if (geoprojectionconverter.get_ogc_wkt_from_projection(len, &ogc_wkt, !geoprojectionconverter.has_projection(false)))
+        {
+          lasreader->header.set_geo_ogc_wkt(len, ogc_wkt);
+          free(ogc_wkt);
+          if ((lasreader->header.version_minor >= 4) && (lasreader->header.point_data_format >= 6))
+          {
+            lasreader->header.set_global_encoding_bit(LAS_TOOLS_GLOBAL_ENCODING_BIT_OGC_WKT_CRS);
+          }
+        }
+        else
+        {
+          fprintf(stderr, "WARNING: cannot produce OCG WKT. ignoring '-set_ogc_wkt' for '%s'\n", lasreadopener.get_file_name());
+        }
+      }
     }
 
     // open the output
@@ -640,11 +712,6 @@ int main(int argc, char *argv[])
 
     while (lasreader->read_point())
     {
-      // maybe set classification
-      if (set_classification != -1)
-      {
-        lasreader->point.set_classification(set_classification);
-      }
       // write the point
       laswriter->write_point(&lasreader->point);
     }
@@ -660,7 +727,18 @@ int main(int argc, char *argv[])
 #else
         fprintf(stderr, "npoints %lld min %g %g %g max %g %g %g\n", lasreader->npoints, lasreader->header.min_x, lasreader->header.min_y, lasreader->header.min_z, lasreader->header.max_x, lasreader->header.max_y, lasreader->header.max_z);
 #endif
-        fprintf(stderr, "return histogram %d %d %d %d %d\n", lasreader->header.number_of_points_by_return[0], lasreader->header.number_of_points_by_return[1], lasreader->header.number_of_points_by_return[2], lasreader->header.number_of_points_by_return[3], lasreader->header.number_of_points_by_return[4]);
+        if (lasreader->header.point_data_format > 5)
+        {
+#ifdef _WIN32
+          fprintf(stderr, "return histogram %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d %I64d\n", lasreader->header.extended_number_of_points_by_return[0], lasreader->header.extended_number_of_points_by_return[1], lasreader->header.extended_number_of_points_by_return[2], lasreader->header.extended_number_of_points_by_return[3], lasreader->header.extended_number_of_points_by_return[4], lasreader->header.extended_number_of_points_by_return[5], lasreader->header.extended_number_of_points_by_return[6], lasreader->header.extended_number_of_points_by_return[7], lasreader->header.extended_number_of_points_by_return[8], lasreader->header.extended_number_of_points_by_return[9], lasreader->header.extended_number_of_points_by_return[10], lasreader->header.extended_number_of_points_by_return[11], lasreader->header.extended_number_of_points_by_return[12], lasreader->header.extended_number_of_points_by_return[13], lasreader->header.extended_number_of_points_by_return[14]); 
+#else
+          fprintf(stderr, "return histogram %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n", lasreader->header.extended_number_of_points_by_return[0], lasreader->header.extended_number_of_points_by_return[1], lasreader->header.extended_number_of_points_by_return[2], lasreader->header.extended_number_of_points_by_return[3], lasreader->header.extended_number_of_points_by_return[4], lasreader->header.extended_number_of_points_by_return[5], lasreader->header.extended_number_of_points_by_return[6], lasreader->header.extended_number_of_points_by_return[7], lasreader->header.extended_number_of_points_by_return[8], lasreader->header.extended_number_of_points_by_return[9], lasreader->header.extended_number_of_points_by_return[10], lasreader->header.extended_number_of_points_by_return[11], lasreader->header.extended_number_of_points_by_return[12], lasreader->header.extended_number_of_points_by_return[13], lasreader->header.extended_number_of_points_by_return[14]); 
+#endif
+        }
+        else
+        {
+          fprintf(stderr, "return histogram %d %d %d %d %d\n", lasreader->header.number_of_points_by_return[0], lasreader->header.number_of_points_by_return[1], lasreader->header.number_of_points_by_return[2], lasreader->header.number_of_points_by_return[3], lasreader->header.number_of_points_by_return[4]);
+        }
      }
     }
     laswriter->close();
