@@ -22,16 +22,16 @@ set(ALL_TARGETS ${GEOPROJECTION_TARGETS} ${STANDALONE_TARGETS})
 add_library(geoprojectionconverter OBJECT geoprojectionconverter.cpp)
 
 foreach(TARGET ${GEOPROJECTION_TARGETS})
-	add_executable(${TARGET} ${TARGET}.cpp $<TARGET_OBJECTS:geoprojectionconverter>)
+	add_executable(lastools-${TARGET} ${TARGET}.cpp $<TARGET_OBJECTS:geoprojectionconverter>)
 endforeach(TARGET)
 
 foreach(TARGET ${STANDALONE_TARGETS})
-	add_executable(${TARGET} ${TARGET}.cpp)
+	add_executable(lastools-${TARGET} ${TARGET}.cpp)
 endforeach(TARGET)
 
 foreach(TARGET ${ALL_TARGETS})
-	target_link_libraries(${TARGET} LASlib)
-	set_target_properties(${TARGET} PROPERTIES
+	target_link_libraries(lastools-${TARGET} LASlib)
+	set_target_properties(lastools-${TARGET} PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../bin)
-	install(TARGETS ${TARGET} RUNTIME DESTINATION bin)
+	install(TARGETS lastools-${TARGET} RUNTIME DESTINATION bin)
 endforeach(TARGET)
